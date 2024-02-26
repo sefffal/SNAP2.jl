@@ -45,7 +45,7 @@ function findstar_nirc2(
     function find_rough_center(
         target, template_img;
         mask=nothing,
-        centrefit=false,
+        centrefit=true,
         normed=false,
         search_box_mas = 1600.0,
         showplot=false,
@@ -129,8 +129,7 @@ function findstar_nirc2(
     # Produce frames
     @info "Finding star"
     tosave = []
-    # Threads.@threads :dynamic 
-    for (cal,fname,i) in collect(zip(frames,fnames_out,1:length(frames)))
+    Threads.@threads :dynamic  for (cal,fname,i) in collect(zip(frames,fnames_out,1:length(frames)))
         x,y = find_rough_center(
             cal,
             template,

@@ -355,6 +355,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         if !endswith(fname, ".gz")
             fname = fname*".gz"
         end
+        return fname
     end
     fnames_II = filter(eachindex(fnames)) do i
         if !force && isfile(fnames_out[i])  && Base.Filesystem.mtime(fnames_out[i]) > Base.Filesystem.mtime(fnames[i])
@@ -391,7 +392,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
 
     verbose && @info "Calibrating raw images (dark, flat, bad-pix, not sky)"
     to_save = []
-    # Threads.@threads :dynamic
+    # Threads.@threads :dynamic 
     for (i,raw) in collect(zip(fnames_II, raws))
         data = (@. (raw - dark) / flat * flatmed .+ bpm)[:,:]
         # cal = RasterImage(raw; data=data, xcoords, ycoords)

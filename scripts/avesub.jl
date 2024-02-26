@@ -7,8 +7,8 @@ North-up, and then stack.
 function avesub(pattern::AbstractString; force=false)
     fnames = Glob.glob(pattern)
     @info "stacking master"
-    out = stackframes(median, pattern; force)
-    reference_img_fname = out.fname
+    stackframes(median, pattern; force)
+    reference_img_fname = replace(pattern, "*"=>"_", ".fits"=>".stacked.fits")
 
     @info "subtracting"
     ref_img = collect(load(reference_img_fname))

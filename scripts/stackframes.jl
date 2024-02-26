@@ -7,21 +7,34 @@ using Interpolations
 Given a glob pattern matching one or more files, stack the files weighted by contrast.
 Function defaults to a contrast-weighted median.
 """
-function stackframes_contweight(pattern::AbstractString)
-    return stackframes_contweight(median, pattern)
+function stackframes_contweight(pattern::AbstractString; force=false)
+    fnames = Glob.glob(pattern)
+    outname = replace(pattern, "*"=>"_", ".fits"=>".stackedw.fits")
+    return stackframes_contweight(median, fnames, outname; force)
 end
-function stackframes_contweight(method, pattern::AbstractString; force=false)
+function stackframes_contweight(method::Base.Callable, fnames::Vector{<:AbstractString}, outname::AbstractString;force=false)
+
+    # Check if there is any work to do
+    if !force && isfile(outname) && Base.Filesystem.mtime(outname) > maximum(Base.Filesystem.mtime.(fnames))
+        out = load(outname)
+        return (;out, fname=outname)
+    end
+    imgs = convert(Vector{AstroImage}, load.(fnames))
+
+    contrasts = contrast(fnames; force)
+
+    return stackframes_contweight(method, imgs, contrasts, outname; force)
+end
+function stackframes_contweight(method, imgs::Vector{<:AstroImage}, contrasts::Vector, outname::AbstractString; force=false)
     # Could think about ways to do this with OnlineStats so we can do rolling
     # medians, means in constant time with new frames
 
-    contrasts = contrast(pattern; force)
     contrast_interpolators = map(contrasts) do (sep,cont)
         return Interpolations.linear_interpolation(
             sep, cont,
             extrapolation_bc=convert(eltype(cont), NaN)
         )
     end
-    imgs = load.(fnames)
 
     img_seps = imgsep.(imgs)
 
@@ -43,12 +56,14 @@ function stackframes_contweight(method, pattern::AbstractString; force=false)
             end
             for I3 in axes(cube,3)
                 conts[I3] = 1 / contrast_interpolators[I3](img_seps[I3][I1,I2])^2
+                # conts[I3] = contrast_interpolators[I3](img_seps[I3][I1,I2])
             end
             mask_cont .= isfinite.(conts)
             # If all data has non-finite contrast, weight equally instead of ignoring.
             if count(mask_cont) == 0
-                conts .= 1
-                mask_cont .= true
+                continue
+                # conts .= 1
+                # mask_cont .= true
             end
             mask_dat .&= mask_cont
             if count(mask_dat) == 0
@@ -61,7 +76,6 @@ function stackframes_contweight(method, pattern::AbstractString; force=false)
     end)(out, img_seps, cube, contrast_interpolators)
 
     push!(out, History, "$(Date(Dates.now())): Stacked frames (contrast weighted).")
-    outname = replace(pattern, "*"=>"_", ".fits"=>".stackedw.fits")
     AstroImages.writefits(outname, out)
     println(outname)
     return out
@@ -78,23 +92,27 @@ function stackframes(pattern::AbstractString; force=false)
     return stackframes(median, pattern; force)
 end
 function stackframes(pattern::AbstractString; force=false)
+    return stackframes(median, pattern; force)
+end
+function stackframes(method::Base.Callable, pattern::AbstractString; force=false)
     fnames = Glob.glob(pattern)
     outname = replace(pattern, "*"=>"_", ".fits"=>".stacked.fits")
-    return stackframes(median, fnames, outname; force)
+    return stackframes(method, fnames, outname; force)
 end
-function stackframes(method, fnames::AbstractVector{<:AbstractString}, outname::AbstractString; force=false)
+function stackframes(method::Base.Callable, fnames::AbstractVector{<:AbstractString}, outname::AbstractString; force=false)
 
     # Could think about ways to do this with OnlineStats so we can do rolling
     # medians, means in constant time with new frames
-
-
-
     # Check if there is any work to do
     if !force && isfile(outname) && Base.Filesystem.mtime(outname) > maximum(Base.Filesystem.mtime.(fnames))
         out = load(outname)
         return (;out, fname=outname)
     end
-    imgs = load.(fnames)
+    imgs = convert(Vector{AstroImageMat}, load.(fnames))
+    return stackframes(method, imgs, outname; force)
+end
+
+function stackframes(method::Base.Callable, imgs::Vector{<:AstroImage}, outname::AbstractString; force=false)
 
     # Place into 3D cube
     cube = stack(imgs)

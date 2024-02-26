@@ -6,7 +6,8 @@ function seq2gif(
     pattern::AbstractString,
     outname=replace(pattern, "*"=>"_", ".fits"=>".mp4",".gz"=>"");
     clims=Percent(99.5),
-    crop=nothing
+    crop=nothing,
+    clims_per_frame=false
     )
     fnames = Glob.glob(pattern)
     @info "loading frames"
@@ -26,7 +27,11 @@ function seq2gif(
         end)
     end
     @info "rendering"
-    rendered = imview(imgs; clims)
+    if !clims_per_frame
+        rendered = imview(imgs; clims)
+    else
+        @info "calculating clims per frame"
+    end
     sz = size(imgs)[1:2]
     if min(sz...) < 400
         sz = (400,400)
@@ -35,7 +40,11 @@ function seq2gif(
         size=sz .* (1,1.05)
     )
     title = Makie.Observable(first(fnames))
-    frame = Makie.Observable(Makie.rotr90(@view rendered[:,:,1]))
+    if !clims_per_frame
+        frame = Makie.Observable(Makie.rotr90(@view rendered[:,:,1]))
+    else
+        frame = Makie.Observable(Makie.rotr90(imview(@view imgs[:,:,1];clims)))
+    end
     ax = Makie.Axis(
         fig[1,1];
         title,
@@ -43,9 +52,13 @@ function seq2gif(
     )
     Makie.image!(ax,frame)
 
-    Makie.record(fig, outname, axes(rendered,3); framerate=10) do i
+    Makie.record(fig, outname, axes(imgs,3); framerate=10) do i
         println("<- ", fnames[i])
         title[] = fnames[i]
-        frame[] = Makie.rotr90(@view rendered[:,:,i])
+        if !clims_per_frame
+            frame[] = Makie.rotr90(@view rendered[:,:,i])
+        else
+            frame[] = Makie.rotr90(imview(@view imgs[:,:,i];clims))
+        end
     end
 end

@@ -44,7 +44,10 @@ function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=fa
         savedata && mkpath(joinpath(profdir,"cal"))
     end
 
+    # How far apart do they have to be in order to be included as a ref?
     sky_psf_radius_px = get(conf["calibrate"], "sky_psf_radius_px", 75.0)
+    # How far out should we mask? (often the same, but sometimes larger.)
+    psf_mask_radius = get(conf["calibrate"], "psf_mask_radius", sky_psf_radius_px)
 
     @info "Loading skys"
     # dark = load("$caldir.dark.fits.gz")
@@ -83,7 +86,7 @@ function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=fa
         xs = axes(calmasked,1) .- calmasked["STAR-X"]
         ys = axes(calmasked,2) .- calmasked["STAR-Y"]
         rs = @. sqrt(xs^2 + ys'^2)
-        calmasked[rs .<= sky_psf_radius_px] .= NaN
+        calmasked[rs .<= psf_mask_radius] .= NaN
         cals_masked[i] = mapwindow(median, calmasked, (3,3))
     end
 

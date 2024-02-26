@@ -1,11 +1,12 @@
 using Statistics
 using CairoMakie: Makie
 using Glob
+using StatsBase
 
 function imgsep(img::AstroImage)
     if haskey(img, "STAR-X")
-        cx = img["STAR-X"]::Float64
-        cy = img["STAR-Y"]::Float64
+        cx = Float64(img["STAR-X"])::Float64
+        cy = Float64(img["STAR-Y"])::Float64
     else
         cx = convert(Float64, mean(axes(img,1)))
         cy = convert(Float64, mean(axes(img,2)))
@@ -17,8 +18,8 @@ function imgsep(img::AstroImage)
 end
 function imgang(img::AstroImage)
     if haskey(img, "STAR-X")
-        cx = img["STAR-X"]::Float64
-        cy = img["STAR-Y"]::Float64
+        cx = Float64(img["STAR-X"])::Float64
+        cy = Float64(img["STAR-Y"])::Float64
     else
         cx = convert(Float64, mean(axes(img,1)))
         cy = convert(Float64, mean(axes(img,2)))
@@ -30,8 +31,9 @@ function imgang(img::AstroImage)
 end
 function contrast(img::AstroImage; step=4)
     rs = imgsep(img)
-    stop = maximum(rs)
-    bins = range(;start=step/2, step, stop)
+    # stop = maximum(rs)
+    maxfinite = maximum(rs .* isfinite.(img))
+    bins = range(;start=step/2, step, stop=maxfinite)
     OutType= promote_type(eltype(img), Float16)
     cont = zeros(OutType, length(bins))
     mask = falses(size(img))
@@ -42,7 +44,9 @@ function contrast(img::AstroImage; step=4)
         if count(mask) == 0
             cont[i] = NaN
         else
-            cont[i] = std(view(img, mask))
+            # reject 5% of outlying pixels when calculating
+            trimmed = StatsBase.trim(view(img, mask), prop=0.05)
+            cont[i] = std(trimmed)
         end
     end
     return bins, cont
@@ -55,7 +59,7 @@ function contrast(fnames::AbstractVector{<:AbstractString}; force=false)
     contrasts = []
     for fname in fnames
         # Calculate contrast if not there, or load
-        outfname_txt = replace(fname, "*"=>"_", ".fits"=>".contrast.txt", ".gz"=>"")
+        outfname_txt = replace(fname, "*"=>"_", ".fits"=>".contrast.txt", ".gz"=>"", ".rotnorth."=>".", ".rotback."=>".")
         if !force && isfile(outfname_txt)
             open(outfname_txt) do f
                 header = readline(f) # skip first line

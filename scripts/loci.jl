@@ -1,7 +1,7 @@
 using FITSIO
 using StatsBase
-
-function loci_region(fname, refnames_pattern::AbstractString, rotthreshpx, region_S, region_O)
+using TSVD # truncated SVD
+function loci_region(fname, refnames_pattern::AbstractString, rotthreshpx, region_S, region_O; kwargs...)
     target = load(fname)
     outfname = replace(fname, ".fits"=>".sub.fits")
     if isfile(outfname)
@@ -12,11 +12,11 @@ function loci_region(fname, refnames_pattern::AbstractString, rotthreshpx, regio
     end
     refnames = glob(refnames_pattern)
     refs = load.(refnames)
-    out = loci_region!(out, target, refs, rotthreshpx, region_S, region_O)
+    out = loci_region!(out, target, refs, rotthreshpx, region_S, region_O; kwargs...)
     AstroImages.writefits(outfname, out)
 end
 using LinearSolve
-function loci_region!(out, target, refs::AbstractVector{<:AstroImage}, rotthreshpx, region_S, region_O, refcube=stack(refs))
+function loci_region!(out, target, refs::AbstractVector{<:AstroImage}, rotthreshpx, region_S, region_O, refcube=stack(refs); N_SVD=60)
     rs = imgsep(target)
     sep = mean(rs[region_S])
     angle = deg2rad(target["ANGLE_MEAN"]::Float64)
@@ -43,7 +43,7 @@ function loci_region!(out, target, refs::AbstractVector{<:AstroImage}, rotthresh
     
 
     ## SVD
-    N_SVD = 60 # 30
+    # N_SVD = 60 # 30
     U, s, V = tsvd(Float32.([refs_O[valid,:];  refs_S]), N_SVD)
     refs_O_rotated = U[1:count(valid),:]
     refs_S_rotated = U[count(valid)+1:end,:]
@@ -52,15 +52,15 @@ function loci_region!(out, target, refs::AbstractVector{<:AstroImage}, rotthresh
     # refs_S_rotated = refs_S*V
 
     ## Linear solve
-    # c = refs_O[valid,:] \ targ_O[valid]
-    prob = LinearProblem(refs_O_rotated, Float32.(targ_O[valid]))
+    c = refs_O_rotated \ targ_O[valid]
+    # prob = LinearProblem(refs_O_rotated, Float32.(targ_O[valid]))
     # @showtime sol = solve(prob, SVDFactorization())#, KrylovJL_GMRES())
-    sol = solve(prob, QRFactorization())#, KrylovJL_GMRES())
+    # sol = solve(prob, QRFactorization())#, KrylovJL_GMRES())
     # @showtime sol = solve(prob, NormalCholeskyFactorization())#, KrylovJL_GMRES())
     # @showtime sol = solve(prob, RFLUFactorization())#, KrylovJL_GMRES())
     # @showtime sol = solve(prob, AppleAccelerateLUFactorization())#, KrylovJL_GMRES())
     # @showtime sol = solve(prob, SimpleLUFactorization())#, KrylovJL_GMRES())
-    c = sol.u
+    # c = sol.u
 
     # ## Linear solve
     # # c = refs_O[valid,:] \ targ_O[valid]
@@ -81,7 +81,7 @@ function loci_region!(out, target, refs::AbstractVector{<:AstroImage}, rotthresh
     return out
 end
 
-function loci_frame(fname, refnames_pattern, rotthreshpx, region_S, region_O)
+function loci_frame(fname, refnames_pattern, rotthreshpx, region_S, region_O; kwargs...)
     target = load(fname)
     outfname = replace(fname, ".fits"=>".sub.fits")
     if isfile(outfname)
@@ -94,7 +94,7 @@ function loci_frame(fname, refnames_pattern, rotthreshpx, region_S, region_O)
     refs = load.(refnames)
     refcube=stack(refs)
     for (reg_S, reg_O) in zip(region_S, region_O)
-        out = loci_region!(out, target, refs, rotthreshpx, reg_S.>0, reg_O.>0, refcube)
+        out = loci_region!(out, target, refs, rotthreshpx, reg_S.>0, reg_O.>0, refcube; kwargs...)
     end
     AstroImages.writefits(outfname, out)
     return out
@@ -102,7 +102,7 @@ end
 
 
 
-function loci_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=false)
+function loci_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=false, kwargs...)
     fnames = glob(fnames_pattern)
     imgs = load.(fnames)
     refcube=stack(imgs)
@@ -121,8 +121,10 @@ function loci_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=false
             fill!(out, NaN)
         end
 
-        for (reg_S, reg_O) in zip(regions_S, regions_O)
-            loci_region!(out, imgs[i], refs_this, rotthreshpx, reg_S.>0, reg_O.>0, refcube_this)
+        # for (reg_S, reg_O) in zip(regions_S, regions_O)
+        # Threads.@threads :dynamic 
+        for (reg_S, reg_O) in collect(zip(regions_S, regions_O))
+            loci_region!(out, imgs[i], refs_this, rotthreshpx, reg_S.>0, reg_O.>0, refcube_this; kwargs...)
         end
         AstroImages.writefits(outfname, out)      
         println(outfname, "\t($i)")  
