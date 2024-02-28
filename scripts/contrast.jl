@@ -26,7 +26,7 @@ function imgang(img::AstroImage)
     end
     xs = axes(img,1) .- cx
     ys = axes(img,2) .- cy
-    θ = atan.(ys, xs)
+    θ = atan.(ys', xs)
     return θ
 end
 function contrast(img::AstroImage; step=4)
