@@ -14,7 +14,7 @@ function avesub(pattern::AbstractString; force=false)
     ref_img = collect(load(reference_img_fname))
     for fname in fnames
         outname = replace(fname,".fits"=>".avesub.fits")
-        if !force && isfile(outname)
+        if !force && isfile(outname) && Base.Filesystem.mtime(outname) > Base.Filesystem.mtime(fname)
             continue
         end
         img = load(fname)

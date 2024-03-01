@@ -17,7 +17,7 @@ function stackframes_contweight(method::Base.Callable, fnames::Vector{<:Abstract
     # Check if there is any work to do
     if !force && isfile(outname) && Base.Filesystem.mtime(outname) > maximum(Base.Filesystem.mtime.(fnames))
         out = load(outname)
-        return (;out, fname=outname)
+        return out
     end
     imgs = convert(Vector{AstroImage}, load.(fnames))
 
@@ -106,7 +106,7 @@ function stackframes(method::Base.Callable, fnames::AbstractVector{<:AbstractStr
     # Check if there is any work to do
     if !force && isfile(outname) && Base.Filesystem.mtime(outname) > maximum(Base.Filesystem.mtime.(fnames))
         out = load(outname)
-        return (;out, fname=outname)
+        return out
     end
     imgs = convert(Vector{AstroImageMat}, load.(fnames))
     return stackframes(method, imgs, outname; force)

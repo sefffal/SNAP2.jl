@@ -10,7 +10,7 @@ rotate all frames North-up, and prepare a folder of all reference images.
 Reference images will be rotated and/or scaled such their speckles are still
 aligned with the target image.
 """
-function preprefs(pattern::AbstractString, refpattern::AbstractString=pattern; force=false)
+function rotnorthrefs(pattern::AbstractString, refpattern::AbstractString=pattern; force=false)
     fnames = Glob.glob(pattern)
     fnames_refs = Glob.glob(refpattern)
 
@@ -25,18 +25,14 @@ function preprefs(pattern::AbstractString, refpattern::AbstractString=pattern; f
             mkdir(refdir)
         end
         for fname_ref in fnames_refs
-            if fname == fname_ref
-                continue
-            end
-            fnameout = joinpath(refdir, splitpath(fname_ref)[end])
-            if !force && isfile(fnameout)
+            outfname = joinpath(refdir, splitpath(fname_ref)[end])
+            if !force && isfile(outfname) && Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
                 continue
             end
 
             ref = load(fname_ref)
             cx, cy = ref["STAR-X"], ref["STAR-Y"]
 
-            # TODO: onwards from here!
             #  Undo our rotation, then do their rotation so that we match
             rot_deg = -targ["ORIG.ANGLE_MEAN"]
             rot_rad = deg2rad(rot_deg)
@@ -60,10 +56,10 @@ function preprefs(pattern::AbstractString, refpattern::AbstractString=pattern; f
                 NaN,
             ))
             applied = copyheader(ref, applied_dat)
-            push!(applied, History, "$(Date(Dates.now())): Rotated to match target North-up angle.")
-            applied["ANGLE_MEAN"] = targ["ANGLE_MEAN"]
-            AstroImages.writefits(fnameout, applied)
-            println(fnameout, "\t rot ref ", rot_deg)
+            push!(applied, History, "$(Date(Dates.now())): Rotated to match target img North-up angle.")
+            applied["ANGLE_MEAN"] = ref["ANGLE_MEAN"] - targ["ORIG.ANGLE_MEAN"]
+            AstroImages.writefits(outfname, applied)
+            println(outfname, "\t rot ref ", rot_deg)
         end
     end
 end

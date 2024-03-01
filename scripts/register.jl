@@ -11,7 +11,7 @@ function register(pattern, template_fname; force=false)
     newtemplate = template
 
     # Output axes should be large enough to cover all edges of the images given their star positions.
-    # Make it an odd number to centre pixel is star location.
+    # Make it an odd number so centre pixel is star location.
     outsize = maximum(map(fnames) do fname
         FITS(fname) do fits
             sz = size(fits[1])[1:2]
@@ -26,13 +26,17 @@ function register(pattern, template_fname; force=false)
     
     # We want the output size to be identical for "similar" reductions,
     # so find the nearest power of two that meets this criteria.
-    powtwo = 2 .^ (5:11)
+    # This is just a heuristic that makes it more convenient to compare 
+    # results from different sequences, or results from slightly different
+    # registration results for the same sequence.
+    powtwo = round.(Int, 2 .^ (5:0.5:11))
     i = findfirst(>(0), powtwo .- outsize)
     if isnothing(i)
         i = lastindex(powtwo)
     end
     outsize = powtwo[i]+1
     ax_out = (1:outsize,1:outsize)
+    @info "Determined output canvas size" ax_out
 
 
     frames = AstroImage[]
