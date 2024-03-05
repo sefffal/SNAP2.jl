@@ -23,7 +23,7 @@ Unsupported (see SNAP 1):
 * GPI
 * NIRI
 
-## Instructions: General Process
+## General Process
 
 The SNAP2 pipeline uses a template `.toml` file to select files for calibration. After that, each function takes file paths or shell "glob" patterns, eg. "n*.fits". 
 Most steps only operate on new or changed files. This allows them to be used for live-processing.
@@ -36,7 +36,7 @@ After calibration, each step appends a new suffix to the end of the filename. Fo
 
 Operations that reduce several files take a "glob" pattern, eg. `myseqname.n*.cal.fits`. If the operation produces a single output file, eg due to stacking, the output filename will be the "glob" pattern with any `*` replaced by `_`, eg. `myseqname.n_.cal.stacked.fits`.
 
-##  Instructions: Pre-Processing
+##  Pre-Processing
 
 1. Create a template `.toml` file with the following information. This specifies which frames to use for eg. darks, flats, etc. There are also a few parameters to control pre-processing steps like background subtraction. An example is listed at the bottom of this page.
 
@@ -74,7 +74,60 @@ fluxnorm("cal/myseqname.*.cal.bgsub.reg.fits.gz")
 seq2gif("cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz", crop=150, clims=px -> quantile(px, 0.999) .* (-0.5, 1)) 
 ```
 
+## Quick median subtraction
+Use this for eg live processing during an observing run. This function simply stacks the PSFs with a median, subtracts that median from all images, rotates them North-up, and stacks the residuals.
+```julia
+avesub("cal/abaur.n*.cal.bgsub.reg.fluxnorm.fits.gz")
+```
 
+
+## LOCI/KLIP subtraction
+
+SNAP2 supports a LOCI / KLIP reduction. Note that these two algorithms are actually nearly indentical, despite the way they are described in the literature (Some implementations are referred to as LOCI, while others are referred to as KLIP). The only differ in the use of SVD versus PCA, which under some assumptions produce the same result.
+
+Our implementation uses the SVD.
+
+To perform LOCI PSF subtraction:
+
+1. Generate subtraction regions. These are typically annular segments. The defaults below produce pairs of subtraction and optimization regions, separated by a buffer zone. This prevents over-subtraction of the planet PSF. Although I do not advise it, you can use a single subtraction zone by passing the same region list as both subtraction and optimization region arguments.
+
+```julia
+S_regions, O_regions = prepregions(
+    "cal/myseqname.n0180.cal.bgsub.reg.fluxnorm.fits.gz",
+    # Control the geometry of the subtraction and optimization regions.
+    sub_inner_px=8,
+    sub_outer_px=110,
+    sub_thick_px=10,
+    opt_inner_px=9,
+    opt_thick_px=25,
+    buf_px=4
+);
+```
+
+2. Perform a LOCI subtraction on all frames. See `loci2_frame` and `loci2_region!` to only perform LOCI on a single frame, or single region of a frame (faster for experimentation)
+```julia
+loci2_all("cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz", 5.6 * 0.65, regions[1], regions[2], force=true, psf_fwhm=4.6, N_SVD=30)
+# Optional: generate a movie
+seq2gif("cal/myseqname.*.cal.bgub.reg.fluxnorm.sub.fits.gz")
+```
+
+3. Rotate subtracted images North-up and stack.
+```julia
+rotnorth("cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.fits.gz")
+stackframes(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.rotnorth.fits.gz")
+```
+
+You could also perform a contrast-weighted stack like so:
+```julia
+stackframes_contweight(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.rotnorth.fits.gz")
+```
+
+
+
+
+
+## Calibration template file
+To perform the initial calibration, you must assign your raw frames to the appropriate sections in a template file like in this example.
 
 See inline comments for a description of each parameter.
 ```toml
@@ -175,12 +228,3 @@ See inline comments for a description of each parameter.
 
 ```
 
-
-
-regions = prepregions("cal/myseqname.n0180.cal.bgsub.reg.fluxnorm.fits.gz", sub_thick_px=10, sub_outer_px=110, sub_inner_px=8, opt_inner_px=9, opt_thick_px=25, buf_px=4);
-# loci_all("cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz", 7, regions[1], regions[2], force=true)
-loci2_all("cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz", 5.6 * 0.65, regions[1], regions[2], force=true, psf_fwhm=4.6, N_SVD=30)
-seq2gif("cal/myseqname.*.cal.bgub.reg.fluxnorm.sub.fits.gz")
-
-rotnorth("cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.fits.gz", force=true)
-stackframes(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.rotnorth.fits.gz", force=true)
