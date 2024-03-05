@@ -235,28 +235,6 @@ function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=fa
 
             # Apply subtraction using un-masked versions
             newsky[tilemask...] = sum(skycube[tilemask...,:] .* reshape(coeff,1,1,:),dims=3)[:,:]
-
-
-            ##############################################
-            # Stuck debugging why the BG subtract only works when I run it on ONE
-            ##################################################
-            # if i == 1
-            # if contains(outfname, "n0145")
-            # Handy for debugging: uncomment this to dump the various cubes used to make the background
-            # for this tile.
-                # AstroImages.writefits(
-                #     replace(outfname, ".fits"=>".A.$j.fits"),
-                #     cal_masked_restrict .- sum(skycubemasked_restrict.* reshape(coeff,1,1,:),dims=3)[:,:]
-                # )
-                # AstroImages.writefits(
-                #     replace(outfname, ".fits"=>".B.$j.fits"),
-                #     cal_masked_restrict,
-                #     A,
-                # )
-                # AstroImages.writefits(replace(outfname, ".fits"=>".C.$j.fits"), collect(skycubemasked_restrict))
-                # AstroImages.writefits(replace(outfname, ".fits"=>".D.$j.fits"), UInt8.(finite_mask))
-                # AstroImages.writefits(replace(outfname, ".fits"=>".E.$j.fits"), reshape(coeff,:,1))
-            # end
         end
     
         corrected = copyheader(A, A .- newsky)
