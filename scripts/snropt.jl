@@ -74,9 +74,10 @@ function snropt_multitarg(
         end
 
         targ_fname = replace(fnames[target_i_start], ".fits"=>".rotnorth.fits")
+        ref_dirs = replace(fnames[target_j], ".fits"=>".rotnorth.refs", ".gz"=>"")
         ref_fnames = globvec([
-            joinpath(replace(fnames[target_j], ".fits"=>".rotnorth.refs", ".gz"=>""), basename(fnames_pattern))
-            for target_j in target_i_range
+            joinpath(ref_dir, basename(fnames_pattern))
+            for (ref_dir, target_j) in zip(ref_dirs, target_i_range)
         ])
 
         # Do the subtraction for these targets
@@ -93,9 +94,13 @@ function snropt_multitarg(
 
         # Delete the reference images (they take up a lot of space and 
         # can be re-created fairly quickly)
-        for ref_fname in (ref_fnames)
+        for ref_fname in ref_fnames
             println(ref_fname, "\trm")
             rm(ref_fname)
+        end
+        for ref_dir in ref_dirs
+            println(ref_dir, "\trmdir")
+            rm(ref_dir)
         end
     end
 end
