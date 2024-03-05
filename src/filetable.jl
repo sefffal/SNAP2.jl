@@ -39,7 +39,7 @@ Returns: nothing.
 function filetable(conf_fname; verbose=true, save=true, showplots=false)
 
     # Read the configuration
-    conf = Snap.readconfig(conf_fname)
+    conf = SNAP.readconfig(conf_fname)
     cal = conf["calibrate"]
     λoverD = conf["telescope"]["λoverD"];
 

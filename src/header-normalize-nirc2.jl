@@ -16,9 +16,9 @@ function header_normalize_nirc2!(img)
         angle_mean, angles = calculate_north_angle(img)
         # img["ANGLE_MEAN"] = angle_mean
     else
-        angle_mean = Snap.meandegrees(angles)
+        angle_mean = SNAP.meandegrees(angles)
 end
-    angles .+= (angle_mean - Snap.meandegrees(angles))
+    angles .+= (angle_mean - SNAP.meandegrees(angles))
     if isnan(angle_mean)
         angle_mean = 0.0
     end

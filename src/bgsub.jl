@@ -3,7 +3,6 @@ using Dates
 using Printf
 using Statistics
 using FITSIO
-using Snap
 using Glob
 using Interpolations: Interpolations
 using CoordinateTransformations: CoordinateTransformations
@@ -25,10 +24,10 @@ including a better BG sub (due to the masking) and supports chopping BG sub (aut
 detected if star has moved a lot during the sequence).
 """
 function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=false)
-    println(Snap.banner()*"\n\nBGSUB")
+    println(SNAP.banner()*"\n\nBGSUB")
    
     # Read the configuration
-    conf = Snap.readconfig(conf_fname)
+    conf = SNAP.readconfig(conf_fname)
     # cal = conf["calibrate"]
     # λoverD = conf["telescope"]["λoverD"];
 

@@ -75,7 +75,10 @@ function snropt_multitarg(
         end
 
         targ_fname = replace(fnames[target_i_start], ".fits"=>".rotnorth.fits")
-        ref_dirs = replace(fnames[target_j], ".fits"=>".rotnorth.refs", ".gz"=>"")
+        ref_dirs = [
+            replace(fnames[target_j], ".fits"=>".rotnorth.refs", ".gz"=>"")
+            for target_j in target_i_range
+        ]
         ref_fnames = globvec([
             joinpath(ref_dir, basename(fnames_pattern))
             for (ref_dir, target_j) in zip(ref_dirs, target_i_range)
@@ -130,7 +133,7 @@ end
 
 # # This is an implementation that works on multiple cores
 # # To use it, you must first start julia with multiple workers (`julia -p 8`) and
-# # then run `using Distributed`, `@everywhere using Snap`.
+# # then run `using Distributed`, `@everywhere using SNAP`.
 # function snropt_all_distributed(fnames_pattern, regions_S, regions_O; force=false, kwargs...)
 #     fnames = glob(fnames_pattern)
 #     @everywhere imgs = load.(fnames)
@@ -162,7 +165,7 @@ globvec(patterns::AbstractVector{<:AbstractString}) = reduce(vcat, Glob.glob.(pa
 function snropt_frame(fname, refnames_pattern, region_S, region_O;force=false, kwargs...)
     target = load(fname)
     outfname = replace(fname, ".fits"=>".snropt.fits")
-    if !force && isfile(outfname) &&  Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
+    if !force && isfile(outfname) && Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
         out = load(outfname)
     else
         out = deepcopy(target)
@@ -218,7 +221,7 @@ function snropt_region!(
     # We simulate the planet at the average PA and average separation of the target subtraction
     # region.
     inject_planet_sep_ave = mean(rs[region_S])
-    inject_planet_pa_ave = deg2rad.(Snap.meandegrees(vec(rad2deg.(θs[region_S]))))
+    inject_planet_pa_ave = deg2rad.(SNAP.meandegrees(vec(rad2deg.(θs[region_S]))))
     # We now figure out how much the planet has rotated in each reference frame.
     # TODO: confirm the sign is correct in second part of expression (no effect if PSF is symmetric through.)
     ref_planet_pa = inject_planet_pa_ave .+ deg2rad.(getindex.(refs, "ANGLE_MEAN").- target["ANGLE_MEAN"] )

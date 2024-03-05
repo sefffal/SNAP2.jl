@@ -122,7 +122,7 @@ function header_normalize!(
     # TODO: see if necessary?
     # # Handle position angle
     # if !haskey(img, "PA")
-    #     mean_PA = Snap.meandegrees(frame.angles)
+    #     mean_PA = SNAP.meandegrees(frame.angles)
 
     #     img["PA"] = rad2deg(rem2pi(deg2rad(mean_PA), RoundDown))
     # end
@@ -158,7 +158,7 @@ function header_setpipelinehash!(img::AstroImage)
     # Try to put the git commit hash of the pipeline into the img of each file
     # to help with reproducibility
     try
-        gitrepo = joinpath(dirname(pathof(Snap)), "..")
+        gitrepo = joinpath(dirname(pathof(SNAP)), "..")
         hash = string(LibGit2.head(gitrepo))
         if LibGit2.isdirty(LibGit2.GitRepo(gitrepo))
             hash *= "-dirty"

@@ -1,9 +1,7 @@
-using Snap
 using Dates
 using Printf
 using Statistics
 using FITSIO
-using Snap
 using Glob
 using Interpolations: Interpolations
 using CoordinateTransformations: CoordinateTransformations
@@ -32,7 +30,7 @@ function findstar_nirc2(
     fnames, template_fname,
     search_box_px,
     ; verbose=true, force=false, showplots=false)
-    verbose && println(Snap.banner()*"\n\nFIND STAR")
+    verbose && println(SNAP.banner()*"\n\nFIND STAR")
 
     if fnames isa AbstractString
         fnames = Glob.glob(fnames)
@@ -103,7 +101,7 @@ function findstar_nirc2(
 
         if centrefit
             # display(imview(corr))
-            result = Snap.centrefit_fixedstd(corr; std=5.0)
+            result = SNAP.centrefit_fixedstd(corr; std=5.0)
             x = result.x
             y = result.y
         else

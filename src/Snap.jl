@@ -12,7 +12,7 @@ This package is a pipeline and collection of tools for
 processing direct-imaging sequences.
 ```
 """
-module Snap
+module SNAP
 
 function banner()
     return  raw""".     _____ _   _          _____                          .

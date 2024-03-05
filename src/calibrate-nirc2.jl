@@ -2,7 +2,6 @@ using Dates
 using Printf
 using Statistics
 using FITSIO
-using Snap
 using Glob
 using Interpolations: Interpolations
 using CoordinateTransformations: CoordinateTransformations
@@ -25,10 +24,10 @@ Returns named tuple with:
 """
 function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true, force=false)
 
-    verbose && println(Snap.banner()*"\n\nCALIBRATE")
+    verbose && println(SNAP.banner()*"\n\nCALIBRATE")
    
     # Read the configuration
-    conf = Snap.readconfig(conf_fname)
+    conf = SNAP.readconfig(conf_fname)
     cal = conf["calibrate"]
     λoverD = conf["telescope"]["λoverD"];
 
@@ -59,7 +58,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
             @warn "No files found with paths $paths"
         end
         @progress "  loading" files = [
-            Snap.header_normalize!(load(path))
+            SNAP.header_normalize!(load(path))
             for path in paths
         ]
         return files
@@ -80,7 +79,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     function loadfiles_lin(pathspec::Union{<:AbstractString,AbstractArray})
         files = loadfiles(pathspec)
         
-        return Snap.linearize_nirc2_data!!.(files)
+        return SNAP.linearize_nirc2_data!!.(files)
     end
 
     loadheaders(pathspec::AbstractString) = loadfiles(glob(pathspec))
@@ -139,7 +138,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         bpm = crop_A_to_B(bpm, fs1)
         # bpm[bpm_manual .> med] .= NaN
     else
-        Snap.excludebadpixels!(bpm, 2.5, 2)
+        SNAP.excludebadpixels!(bpm, 2.5, 2)
     end
     if size(bpm) != size(fs1)
         @info "Cropping bpm to match first data file dimensions."
@@ -152,21 +151,21 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     bpm[isfinite.(bpm)] .= 0.0
 
     @show size(bpm)
-    dark = Snap.interpbadpixels!(dark .+ bpm)
+    dark = SNAP.interpbadpixels!(dark .+ bpm)
 
     verbose && @info "Compiling flat frames"
     fnames_flaton = map(fnames_flaton) do img
         img = crop_A_to_B(img, fs1)
         # Bad pixel map has 0 everywhere except NaN on bad pixels
         img = img.+bpm
-        Snap.interpbadpixels!(img)
+        SNAP.interpbadpixels!(img)
         return img
     end
     fnames_flatoff = map(fnames_flatoff) do img
         img = crop_A_to_B(img, fs1)
         # Bad pixel map has 0 everywhere except NaN on bad pixels
         img = img.+bpm
-        Snap.interpbadpixels!(img)
+        SNAP.interpbadpixels!(img)
         return img
     end
 
@@ -226,7 +225,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
                 ),
                 skyraw
         )
-        sky = map(Snap.interpbadpixels!,sky)
+        sky = map(SNAP.interpbadpixels!,sky)
         # sky.data ./= sky.headers["TOTEXP"]
     end
         
@@ -272,7 +271,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
 
     ###
     verbose && @info "Calibrating PSF images"
-    bpm_psf = Snap.crop_A_to_B(bpm, first(psfs))
+    bpm_psf = SNAP.crop_A_to_B(bpm, first(psfs))
     # calibrated_psfs = parmap(psfs) do psf
     calibrated_psfs = map(psfs) do psf
         dat = (psf .- darkpsf) ./
@@ -283,7 +282,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         # Remove any weird bias offset between PSF and data
         dat = dat .- median(filter(isfinite,[collect(dat[begin:begin+3,:]) collect(dat[end-3:end,:])]))
         psfcal = copyheader(psf,dat)
-        Snap.interpbadpixels!(psfcal)
+        SNAP.interpbadpixels!(psfcal)
         return psfcal
     end
     if write_masters && savedata
@@ -302,9 +301,9 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     star_y = round(Int, get(conf["calibrate"], "star_y", 0))
     transformed_psfs = map(calibrated_psfs) do psf
         if star_x != 0
-            results = Snap.centrefit_fixedstd(psf, (star_x-50, star_x+50), (star_y-50, star_y+50), std=3)
+            results = SNAP.centrefit_fixedstd(psf, (star_x-50, star_x+50), (star_y-50, star_y+50), std=3)
         else
-            results = Snap.centrefit_fixedstd(psf, (1, size(psf,1)), (1, size(psf,2)), std=3)
+            results = SNAP.centrefit_fixedstd(psf, (1, size(psf,1)), (1, size(psf,2)), std=3)
         end
         tfrm = CoordinateTransformations.Translation((results.x,results.y).- mean.(output_axes_psf))
         applied = parent(ImageTransformations.warp(
@@ -378,7 +377,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     raws = loadfiles_lin(fnames[fnames_II])
 
     for raw in raws
-        Snap.interpbadpixels!(raw .+ bpm)
+        SNAP.interpbadpixels!(raw .+ bpm)
     end
 
     # if savedata && get(conf["calibrate"], "write_calibrated", true)
@@ -402,11 +401,11 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         push!(cal, History, "$(Date(Dates.now())): dark & flat calibrated")
 
         # This line is the bottle-neck by factor 100
-        cal = Snap.interpbadpixels!(cal)
+        cal = SNAP.interpbadpixels!(cal)
         push!(cal, History, "$(Date(Dates.now())): replaced bad pixels with neighbours")
 
         # Apply the distortion solution
-        dat = Snap.nirc2_dewarp!(AstroImage(collect(cal)))
+        dat = SNAP.nirc2_dewarp!(AstroImage(collect(cal)))
         cal = copyheader(cal, dat)
 
         verbose && println(fnames_out[i], "\t", cal["DATE-OBS"], " ", cal["UTC"], "\t($i)")

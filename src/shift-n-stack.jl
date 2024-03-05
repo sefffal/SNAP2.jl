@@ -36,7 +36,7 @@ end
 # fig = Makie.lines(ang2)
 
 # ##
-# fs2 = Snap.header_normalize_nirc2!.(fs)
+# fs2 = SNAP.header_normalize_nirc2!.(fs)
 # ang3 = getindex.(fs2, "ANGLE_MEAN")
 # Makie.lines(ang3)
 

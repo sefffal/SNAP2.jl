@@ -42,7 +42,7 @@ function loci2_region!(
     # We simulate the planet at the average PA and average separation of the target subtraction
     # region.
     inject_planet_sep_ave = mean(rs[region_S])
-    inject_planet_pa_ave = deg2rad.(Snap.meandegrees(vec(rad2deg.(θs[region_S]))))
+    inject_planet_pa_ave = deg2rad.(SNAP.meandegrees(vec(rad2deg.(θs[region_S]))))
     # for now don't consider scaling due to SDI, only consider rotation from ADI.
     x = inject_planet_sep_ave * cos(inject_planet_pa_ave)
     y = inject_planet_sep_ave * sin(inject_planet_pa_ave)
