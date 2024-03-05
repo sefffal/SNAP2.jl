@@ -2,8 +2,29 @@ using Random: Random
 using Enzyme
 using Optim: Optim
 
+# TODO:
+# At snropt_all level:
+#     * Add parameters for chunk size and step.
 
-function snropt_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=false, kwargs...)
+# Models
+# Output PSF models too. Store these as a cube in a second extension to the same output image.
+# We really want to compute the model on a larger area than just the subtraction region.
+# We need a third region that is the union of the subtraction, optimization, and buffers.
+# Should check if it's fast to just calculate over the full frame.
+
+# FMMF
+# Post processing step 
+# Can I do this right on the subtracted image, despite the discontinuities?
+# I think so!
+# just need to be picking from the right model region.
+# I can also rotate the model as needed, instead of assuming it doesn't change based on PA. The negative wings definitely do!.
+# Estimating the noise: need to do a noise-weighted matched filter.
+# But how do we do esimate the noise? I guess we can do a contrast curve
+#     from the subtracted image and assume it's consistent between annular sectors.
+# Could also do this on the full stack if we used a mean, but not easily if we used a median.
+
+
+function snropt_all(fnames_pattern, regions_S, regions_O; force=false, kwargs...)
     fnames = glob(fnames_pattern)
     imgs = load.(fnames)
     refcube=stack(imgs)
@@ -21,15 +42,117 @@ function snropt_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=fal
         # for (reg_S, reg_O) in zip(regions_S, regions_O)
         # Threads.@threads :dynamic 
         for (reg_S, reg_O) in collect(zip(regions_S, regions_O))
-            snropt_region!(out, targ, refs, reg_S.>0, reg_O.>0, refcube; kwargs...)
+            snropt_region!(out, targ, imgs, reg_S.>0, reg_O.>0, refcube; kwargs...)
         end
         AstroImages.writefits(outfname, out)      
         println(outfname, "\t($i)")  
     end
 end
 
+"""
+This function sets up and performs a multi-target SNR optimization.
+
+"""
+function snropt_multitarg(
+    fnames_pattern,
+    regions_S,
+    regions_O;
+    force=false,
+    target_group=10,
+    target_step=10,
+    target_start=1,
+    kwargs...
+)
+    fnames = glob(fnames_pattern)
+
+    for target_i_start in target_start:target_step:length(fnames)
+        target_i_range = target_i_start:1:min(target_i_start + target_group, lastindex(fnames))
+
+        # Start by preparing the reference images for each of the targets
+        for target_i in target_i_range
+            rotnorthrefs(fnames[target_i], fnames_pattern; force)
+        end
+
+        targ_fname = replace(fnames[target_i_start], ".fits"=>".rotnorth.fits")
+        ref_fnames = globvec([
+            joinpath(replace(fnames[target_j], ".fits"=>".rotnorth.refs", ".gz"=>""), basename(fnames_pattern))
+            for target_j in target_i_range
+        ])
+
+        # Do the subtraction for these targets
+        snropt_frame(
+            # Target image (we actually have multiple targets, but this sets eg the rotation angle for modelling)
+            targ_fname,
+            # Reference images rotated to match the north-up target images
+            ref_fnames,
+            regions_S,
+            regions_O;
+            force,
+            kwargs...
+        )
+
+        # Delete the reference images (they take up a lot of space and 
+        # can be re-created fairly quickly)
+        for ref_fname in (ref_fnames)
+            println(ref_fname, "\trm")
+            rm(ref_fname)
+        end
+    end
+end
 
 
+#     i = 0
+#     for (fname, targ) in zip(fnames, imgs)
+#         i+=1
+#         outfname = replace(fname, ".fits"=>".snropt.fits")
+#         if !force && isfile(outfname) &&  Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
+#             out = load(outfname)
+#         else
+#             out = deepcopy(targ)
+#             fill!(out, NaN)
+#         end
+
+#         # for (reg_S, reg_O) in zip(regions_S, regions_O)
+#         # Threads.@threads :dynamic 
+#         for (reg_S, reg_O) in collect(zip(regions_S, regions_O))
+#             snropt_region!(out, targ, imgs, reg_S.>0, reg_O.>0, refcube; kwargs...)
+#         end
+#         AstroImages.writefits(outfname, out)      
+#         println(outfname, "\t($i)")  
+#     end
+# end
+
+# # This is an implementation that works on multiple cores
+# # To use it, you must first start julia with multiple workers (`julia -p 8`) and
+# # then run `using Distributed`, `@everywhere using Snap`.
+# function snropt_all_distributed(fnames_pattern, regions_S, regions_O; force=false, kwargs...)
+#     fnames = glob(fnames_pattern)
+#     @everywhere imgs = load.(fnames)
+#     @everywhere refcube=stack(imgs)
+#     pmap(eachindex(fnames)) do i
+#         fname = fnames[i]
+#         outfname = replace(fname, ".fits"=>".snropt.fits")
+#         if !force && isfile(outfname) &&  Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
+#             out = load(outfname)
+#         else
+#             out = deepcopy(targ)
+#             fill!(out, NaN)
+#         end
+#         for (reg_S, reg_O) in collect(zip(regions_S, regions_O))
+#             snropt_region!(out, targ, imgs, reg_S.>0, reg_O.>0, refcube; kwargs...)
+#         end
+#         AstroImages.writefits(outfname, out)      
+#         println(outfname, "\t($i)")
+#     end
+# end
+
+"""
+Given a glob pattern string, run `Glob.glob` and return a vector of filenames.
+Given a vector of globs, run `Glob.glob` on each and return a concatenated
+vector of filenames.
+"""
+globvec(pattern::AbstractString) = Glob.glob(pattern)
+globvec(patterns::AbstractVector{<:AbstractString}) = reduce(vcat, Glob.glob.(patterns))
 function snropt_frame(fname, refnames_pattern, region_S, region_O;force=false, kwargs...)
     target = load(fname)
     outfname = replace(fname, ".fits"=>".snropt.fits")
@@ -39,14 +162,23 @@ function snropt_frame(fname, refnames_pattern, region_S, region_O;force=false, k
         out = deepcopy(target)
         fill!(out, NaN)
     end
-    refnames = glob(refnames_pattern)
-    refs = load.(refnames)
-    refcube=stack(refs)
+    refnames = globvec(refnames_pattern)
+    @info "Loading images"
+    @progress refs = [
+        load(refname)
+        for refname in refnames
+    ]
+    # For processing, we want the data in a single large cube
+    # and the headers. Once we grab the headers and data julia can 
+    # GC the images themselves.
+    hdrs = header.(refs)
+    @info "Stacking images into contiguous memory"
+    refcube = stack(refs)
     i = 0
     for (reg_S, reg_O) in zip(region_S, region_O)
         i+= 1
         println("region #$i")
-        snropt_region!(out, target, refs, reg_S.>0, reg_O.>0, refcube; kwargs...)
+        snropt_region!(out, target, hdrs, reg_S.>0, reg_O.>0, refcube; kwargs...)
     end
     AstroImages.writefits(outfname, out)
     return out
@@ -57,7 +189,7 @@ end
 function snropt_region!(
         out::AstroImage,
         target::AstroImage,
-        refs::AbstractVector{<:AstroImage},
+        refs::AbstractVector,
         region_S::AbstractMatrix{Bool},
         region_O::AbstractMatrix{Bool},
         refcube=stack(refs);
@@ -72,11 +204,10 @@ function snropt_region!(
     # angles = deg2rad.(getindex.(refs, "ANGLE_MEAN")::Vector{Float64})
     # valid_II = findall(allowed)
 
-    ## Given a list of frames, calculate the photometry of the planet at the mean location
+    # Given a list of frames, calculate the photometry of the planet at the mean location
     # of the target frame.
     # We can use that for throughput normalization, for tuning hyper-parameters, and for 
-    # SNAP (down the road)
-    # Issue: we really need to be able to rotate this into the SVD basis.
+    # SNR optimization.
 
     # We simulate the planet at the average PA and average separation of the target subtraction
     # region.
@@ -139,37 +270,32 @@ function snropt_region!(
     # return out, outs
 
 
-    targ_O = target[region_O]
     refs_O = zeros(eltype(refcube), count(region_O), length(refs))
     refs_S = zeros(eltype(refcube), count(region_S), length(refs))
     for i in eachindex(refs)
         refs_O[:,i] .= refcube[region_O,i]
         refs_S[:,i] .= refcube[region_S,i]
     end
-    valid = vec(all(isfinite,refs_O,dims=2)) .& isfinite.(targ_O)
+    valid = vec(all(isfinite,refs_O,dims=2))
 
     # Reject pixels that are strongly deviated from the clipped standard deviation.
     clip_std = std(StatsBase.trim(vec(view(refs_O,valid,:)); prop=0.05)) # Find std, while ignoring 5% most deviated pixels
     valid .&= all(
-        (-5clip_std .< view(refs_O,valid,:) .< 5clip_std) .&
-        (-5clip_std .< view(targ_O,valid) .< 5clip_std),
+        (-5clip_std .< view(refs_O,valid,:) .< 5clip_std),
         dims=2
     ) 
     # Don't do this clipping if we end up with nothing left, or take too much
     if count(valid) == 0|| mean(valid) < 0.25
         valid .= true
     end
-
-
-
+    refs_O = refs_O[valid,:]
 
     # Identify the pixels that are safe to use for evaluating the SNR of the subtraction
     # Avoid looking at bad pixels
     # Ignore the bottom and top 0.5% of pixels
     clip_ex = extrema(StatsBase.trim(vec(refs_S); prop=0.01)) # Find std, while ignoring 5% most deviated pixels
     region_S_valid = all(
-        (clip_ex[1] .< refs_S .< clip_ex[2]) .&
-        (clip_ex[1] .< target[region_S] .< clip_ex[2]),
+        (clip_ex[1] .< refs_S .< clip_ex[2]),
         dims=2
     )[:]
     # Don't do this clipping if we end up with nothing left, or take too much
@@ -177,114 +303,227 @@ function snropt_region!(
         region_S_valid .= true
     end
 
-    f,ax,pl = Makie.scatterlines(
-        phot_of_ref_at_target_inject_location,
-    )
-    Makie.hlines!(ax,[0.1,phot_of_target_at_inject_location])
-    display(f)
-
+    # f,ax,pl = Makie.scatterlines(
+    #     phot_of_ref_at_target_inject_location,
+    # )
+    # Makie.hlines!(ax,[0.1,phot_of_target_at_inject_location])
+    # display(f)
 
     # Include all frames with flux contamination in SNR-OPT, but feed frames with 
     # low contamination through a truncated SVD.
-    frames_to_svd = phot_of_ref_at_target_inject_location .< 0.1
-    
+    frames_to_svd = phot_of_ref_at_target_inject_location .< 0.1phot_of_target_at_inject_location
+
+    # Indices of "reference" images that have a model photometry equal
+    # to the "target". Note that the target is actually included in the references
+    # and multiple targets can be there at once. 
+    # The "target" is really just used to set up some of the PSF modelling parameters.
+    refs_with_maxphot = phot_of_ref_at_target_inject_location .>= 0.99phot_of_target_at_inject_location
+    println("# targets: ", count(refs_with_maxphot))
+
+    # Do a intial subtraction, that is just the average of the "target" frames.
+    # This will be our baseline.
+    c = zeros(Float32, length(phot_of_ref_at_target_inject_location))
+    c[refs_with_maxphot] .= 1.0
+    phot_out = dot(c,phot_of_ref_at_target_inject_location)
+    throughput = phot_out/phot_of_target_at_inject_location
+    processed_S = refs_S*c
+    processed_S ./= throughput
+    init_SNR = best_SNR = 1.0 ./ sqrt(mean(processed_S[region_S_valid].^2))
+
+    # Set the output to this initial averaged value. 
+    # If we never improve, it will won't get overritten.
+    # This allows us to do no subtraction at all if it doesn't help.
+    out[region_S] .= processed_S
+
+    # Consider whether we can bin frames before SNR-Opt, etc.
+    # The SVD will handle this for frames with low contamination, but we can't apply
+    # an SVD inteligently to create non-linear "SNR eigen modes". Instead we will just
+    # bin down the data a bit.
+    # This is especially usefull for multi-target SNR optimization where we might 
+    # have many very similar reference images.
+    # If the frames have < 2px of planet movement, and high correlation in the
+    # optimization region, we can bin them together.
+    # These will be a vector of vector of frames, grouped together by correlation and
+    # angle.
+    refs_to_bin = Tuple{Float64,Vector{Int}}[]
+    for i in findall(.!frames_to_svd)
+        # Bin data that is within 2% the same model flux and is well correlated
+        model_flux_round = round(phot_of_ref_at_target_inject_location[i]*50)
+        # If either there is nothing at this angle, or the first frame at that
+        # angle is not very correlated, start a new group.
+        found_matching_group = false
+        for (model_flux′, group) in refs_to_bin
+            if model_flux_round != model_flux′
+                continue
+            end
+            # Compare correlation of current frame to first frame in the group
+            j = group[1]
+            c = cor(refs_O[:,i], refs_O[:,j])
+            if c >= 0.99
+                # println("highly correlated $i $j $c")
+                push!(group, i)
+                found_matching_group = true
+                break
+            end
+        end
+        if !found_matching_group
+            push!(refs_to_bin, (model_flux_round, [i]))
+        end
+    end
+    println("$(count(.!frames_to_svd)) frames with flux contamination binned to $(length(refs_to_bin))")
+
+    # Now actually bin them
+    refs_O_bin = zeros(eltype(refs_O), size(refs_O,1), length(refs_to_bin))
+    refs_S_bin = zeros(eltype(refs_S), size(refs_S,1), length(refs_to_bin))
+    phot_S_bin = zeros(eltype(phot_of_ref_at_target_inject_location), length(refs_to_bin))
+    for (i,(_,group)) in enumerate(refs_to_bin)
+        len = 0
+        # println(phot_of_ref_at_target_inject_location[group])
+        for j in group
+            len += 1
+            refs_O_bin[:,i] .+= @view refs_O[:,j]
+            refs_S_bin[:,i] .+= @view refs_S[:,j]
+            phot_S_bin[i] += phot_of_ref_at_target_inject_location[j]
+        end
+        refs_O_bin[:,i] ./= len
+        refs_S_bin[:,i] ./= len
+        phot_S_bin[i] /= len
+    end 
+    # println(phot_S_bin)
+
+    # The truncated SVD takes a moderate amount of time.
+    # We therefore do it only once, for the largest value of N_SVD and 
+    # then index into it to select the right number of modes.
+    # Note: if N_SVD=0 then we include everything. No need to SVD at all.
+    if maximum(N_SVD) > 0 && count(frames_to_svd) > 0
+        U, s, V = tsvd(Float32.(refs_O[:,frames_to_svd]), maximum(N_SVD))
+    end
+
     # Loop through multiple N_SVD values and pick the best one.
-    # We start with no subtraction at all.
-    out[region_S] .= target[region_S]
-    init_SNR = best_SNR = 1.0 / sqrt(mean(target[region_S][region_S_valid].^2))
-    println("initial\t\t: $(best_SNR)\t*")
+    println("\t\tinitial\t\t: $(best_SNR)")
+    # Track the total time this region takes to process.
+    t_tot = 0
     for n_SVD in N_SVD
-        if n_SVD == 0 || count(frames_to_svd) == 0
-            refs_O_rotated = refs_O[valid,:]
-            refs_S_rotated = refs_S
-            phot_S_rotated = phot_of_ref_at_target_inject_location
-        else
-            U, s, V = tsvd(Float32.(refs_O[valid,frames_to_svd]), n_SVD)
-            refs_O_low_contam_rotated = U
-            refs_S_low_contam_rotated = refs_S[:,frames_to_svd] *V * inv(Diagonal(s))
-            phot_S_low_contam_rotated = (phot_of_ref_at_target_inject_location[frames_to_svd]'*(V*inv(Diagonal(s))))'
+        # Track the time of this block
+        t = @elapsed begin
+            # If we are using all frames, we do not use the SVD.
+            if n_SVD == 0 || count(frames_to_svd) == 0
+                refs_O_prepared = refs_O_bin #refs_O[:,.!frames_to_svd]
+                refs_S_prepared = refs_S_bin #refs_S[:,.!frames_to_svd]
+                phot_S_prepared = phot_S_bin #phot_of_ref_at_target_inject_location[.!frames_to_svd]
+            else
+                # These are the N largest SVD components among the frames that do not have significant
+                # flux overlap with the planet PSF (<10%).
+                # U gives the reference region eigen-images.
+                # We then "rotate" (or "transform") the modelled photometry and subtraction
+                # regions to match the new truncated eigen-image basis.
+                # We have to multiply by the inverse of the singular value vector to maintain
+                # the correct intensity scales between these three products.
+                refs_O_low_contam_rotated = U[:,1:n_SVD]
+                refs_S_low_contam_rotated = refs_S[:,frames_to_svd] * V[:,1:n_SVD] * inv(Diagonal(s[1:n_SVD]))
+                phot_S_low_contam_rotated = (phot_of_ref_at_target_inject_location[frames_to_svd]'*(V[:,1:n_SVD] * inv(Diagonal(s[1:n_SVD]))))'
 
-            # Append SVD'd frames to regular contaminated frames
-            refs_O_rotated = Float32[refs_O_low_contam_rotated;; refs_O[valid,.!frames_to_svd]]
-            refs_S_rotated = Float32[refs_S_low_contam_rotated;; refs_S[:,.!frames_to_svd]]
-            phot_S_rotated = Float32[phot_S_low_contam_rotated; phot_of_ref_at_target_inject_location[.!frames_to_svd]]
+                # Append SVD'd frames to regular contaminated frames.
+                # We will then proceed with SNR-Opt using this hybrid basis of SVD eigen-images and
+                # natural frames that contain significant flux overlap.
+                refs_O_prepared = Float32[refs_O_low_contam_rotated;; refs_O_bin] #refs_O[:,.!frames_to_svd]]
+                refs_S_prepared = Float32[refs_S_low_contam_rotated;; refs_S_bin] #refs_S[:,.!frames_to_svd]]
+                phot_S_prepared = Float32[phot_S_low_contam_rotated;  phot_S_bin] #phot_of_ref_at_target_inject_location[.!frames_to_svd]]
+            end
+
+            # refs_O_rotated = refs_O[:,:]
+            # refs_S_rotated = refs_S
+            # phot_S_rotated = phot_of_ref_at_target_inject_location
+
+            # Maximizing or minimizing the SNR is actually equivalent, as long 
+            # as we do throughput correction! One makes the planet positive,
+            # the other makes the planet negative.
+            (f, f′) = make_snr_callbacks(refs_O_prepared, phot_S_prepared)
+            # (f, f′) = make_nsr_callbacks(refs_O_prepared, phot_S_prepared)
+
+            # Start with random coefficients, but seed with the shape of the region
+            # for some reprodicibility.
+            Random.seed!(hash(region_S))
+            c = rand(size(refs_S_prepared,2))
+
+            # In-place gradient function for optimizer
+            g!(G, c) = G .= f′(c)
+            # Run optimization
+            try
+                result = Optim.optimize(
+                    f,
+                    g!,
+                    convert(Vector{Float32}, c),
+                    LBFGS(),
+                    Optim.Options(
+                        show_trace=false,
+                        show_every=1000,
+                        iterations = 15000,
+                        g_reltol = 1e-12,                
+                        g_abstol = 1e-12,        
+                        f_reltol = 1e-12,                
+                        f_abstol = 1e-12,                
+                    ),
+                )
+
+                # Even if the result is not converged it is often pretty good. 
+                # Emit a warning, but still go on to check if these coefficients
+                # have improved the reduction.
+                if !Optim.converged(result)
+                    @warn "region did not converge"
+                    display(result)
+                end
+                c = Optim.minimizer(result)
+            catch err
+                @error "Error during optimization" exception=(err, catch_backtrace())
+            end
+
+            # Normal output
+            processed_S = refs_S_prepared*c
+
+            # Model output:
+            # processed_S .= targ_M .- vec(sum(reshape(c,1,:) .* refs_M_prepared,dims=2))
+
+            phot_out = dot(c, phot_S_prepared)
+            
+            throughput = phot_out/phot_of_target_at_inject_location
+
+            # Throughput normalize (just once for full anulus)
+            # TODO: calculate throughput at inner edge, outer edge, and middle,
+            # then do linear interpolation. That reduced the edge artifacts.
+            processed_S ./= throughput
+
+            new_SNR = 1.0 ./ sqrt(mean(processed_S[region_S_valid].^2))
         end
-
-        # refs_O_rotated = refs_O[valid,:]
-        # refs_S_rotated = refs_S
-        # phot_S_rotated = phot_of_ref_at_target_inject_location
-
-        # (snr, snr′) = make_snr_callbacks(refs_O_rotated, phot_S_rotated)
-        (f, f′) = make_nsr_callbacks(refs_O_rotated, phot_S_rotated)
-
-        # return (refs_O_rotated, phot_S_rotated, targ_O[valid], f, f′)
-
-        # Start with random coefficients, but seed with the shape of the region
-        # for some reprodicibility
-        # rng = Random.Xoshiro(hash(region_S))
-        rng = Random.Xoshiro(count(region_S))
-        c = randn(rng, size(refs_S_rotated,2))
-        g!(G, c) = G .= f′(c)
-        result = Optim.optimize(
-            f,
-            g!,
-            convert(Vector{Float32}, c),
-            LBFGS(),
-            Optim.Options(show_trace=false, show_every=1000, iterations = 15000)
-        )
-
-        if !Optim.converged(result)
-            @warn "region did not converge"
-            display(result)
-        end
-        c = Optim.minimizer(result)
-
-
-        # Normal output
-        processed_S = target[region_S] .- refs_S_rotated*c
-
-        # Model output:
-        # processed_S .= targ_M .- vec(sum(reshape(c,1,:) .* refs_M_rotated,dims=2))
-
-        # display(imview(out))
-        phot_out = dot(c,phot_S_rotated)
-        
-        throughput = phot_out/phot_of_target_at_inject_location
-
-        # Throughput normalize (just once for full anulus)
-        processed_S ./= throughput
-
-        new_SNR = 1.0 ./ sqrt(mean(processed_S[region_S_valid].^2))
-        print("n_SVD=$n_SVD \t: $(new_SNR)")
+        t_tot += t
+        print("$t\tn_SVD=$n_SVD \t: $(new_SNR)")
         if new_SNR > best_SNR
-            print("\t*")
+            print("\t🟢")
             best_SNR = new_SNR
             out[region_S] .= processed_S
+        else
+            print("\t🔻")
         end
         println()
+
+        if n_SVD >= count(frames_to_svd)
+            break
+        end
     end
-    println("improvement = $(best_SNR/init_SNR)")
+    improvement = best_SNR/init_SNR
+    print("$t_tot\timprovement \t: ×$improvement")
+    if improvement > 100
+        println("\t🤩")
+    elseif improvement > 50
+        println("\t😄")
+    elseif improvement > 10
+        println("\t🙂")
+    elseif improvement > 1
+        println("\t🤷")
+    elseif improvement < 1.5
+        println("\t😒")
+    end
     println()
-
-    # @show throughput phot_out phot_of_target_at_inject_location
-    # display(
-    #     Makie.scatterlines(phot_of_ref_at_target_inject_location)
-    # )
-
-    # return out .* region_S
-    # return c
-
-    # @show size(valid) count(valid) size(refs_O_rotated)
-
-
-    # modes = zeros(size(region_O)...,size(refs_O_rotated,2))
-    # modes_region_O = @view modes[region_O,:]
-    # modes_region_O[valid,:] .=refs_O_rotated
-    # modes_region_S = @view modes[region_S,:]
-    # modes_region_S .= refs_S_rotated
-    
-    # return modes
-
 end
 
 
@@ -313,7 +552,7 @@ function _nsr(
     mul!(temp2, imgdat, c)
     temp3 .= temp2.^2
     noise = sqrt(mean(temp3))
-    return phot/noise
+    return noise/phot
 end
 """
     (snr, snr′,) = make_snr_callbacks(refs_O::Matrix, phot_S::Vector)
@@ -338,8 +577,21 @@ function make_snr_callbacks(refs_O_rotated::AbstractMatrix{<:Number}, phot_S_rot
     )
         return _snr(c, imgdat, photdat, temp2, temp3)
     end
+    
+    # In previous versions of the SNAP pipeline, we used a convex optimization library
+    # to formulate this problem. In practice, a simple iterative gradient optimization 
+    # seems to perform pretty well too.
 
+    # We use the Enzyme library to automatically calculate the gradient of the SNR 
+    # with respect to the coefficients provided.
+    # A hand-coded gradient calculation might be faster. I have the math worked out
+    # somewhere for the analytic gradient, but would have to dig it out from the 
+    # unknown depths of an old laptop hard drive, or just re-calculate it by hand.
 
+    # Allocate temporary storage used by the SNR calculation and Enzyme gradient
+    # calculation once, and re-use for all calls into this function.
+    # Note that it is not thread-safe as currently implemented!! (would need to use
+    # task-local storage for these scratch spaces.)
     temp2_diff = copy(temp2)
     temp3_diff = copy(temp3)
     temp2_d = Duplicated(temp2, temp2_diff)
@@ -351,6 +603,8 @@ function make_snr_callbacks(refs_O_rotated::AbstractMatrix{<:Number}, phot_S_rot
         fill!(temp2_diff, 0)
         fill!(temp3_diff, 0)
         fill!(c_diff, 0)
+        # Enzyme can also calculate both the primal value and the gradient 
+        # simultaneously, however, last I checked it was not very fast.
         out = Enzyme.autodiff(
             Reverse,
             _snr,
@@ -362,57 +616,7 @@ function make_snr_callbacks(refs_O_rotated::AbstractMatrix{<:Number}, phot_S_rot
         )
         return c_diff
     end
-
-
-    # function snr′_with_primal(c::AbstractVector{Float32})
-    #     fill!(temp1, 0)
-    #     fill!(temp2, 0)
-    #     fill!(temp3, 0)
-    #     fill!(temp1_diff, 0)
-    #     fill!(temp2_diff, 0)
-    #     fill!(temp3_diff, 0)
-    #     fill!(c_diff, 0)
-    #     out, primal = Enzyme.autodiff(
-    #         ReverseWithPrimal,
-    #         snr,
-    #         Duplicated(c, c_diff), 
-    #         Const(imgdat),
-    #         Const(photdat),
-    #         temp1_d,
-    #         temp2_d,
-    #         temp3_d,
-    #     )
-    #     return primal::eltype(c), c_diff
-    # end
-
-
-    # optimize(f, g!, x0, LBFGS())
-
-    # oh = Enzyme.onehot(c_diff)
-    # function snr′(c::AbstractVector{Float32})
-    #     fill!(temp1, 0)
-    #     fill!(temp2, 0)
-    #     fill!(temp3, 0)
-    #     fill!(temp1_diff, 0)
-    #     fill!(temp2_diff, 0)
-    #     fill!(temp3_diff, 0)
-    #     primal, out = Enzyme.autodiff(
-    #         Enzyme.Forward,
-    #         snr,
-    #         Enzyme.BatchDuplicated,
-    #         Enzyme.BatchDuplicated(c,oh),
-    #         Const(imgdat),
-    #         Const(photdat),
-    #         temp1_dnn,
-    #         temp2_dnn,
-    #         temp3_dnn
-    #     )
-    #     c_diff .= tuple(out...)
-    #     return primal, c_diff
-    # end
-
-        
-    (snr, snr′)#, snr′_with_primal)
+    (snr, snr′)
 end
 
 
@@ -432,13 +636,6 @@ function make_nsr_callbacks(refs_O_rotated::AbstractMatrix{<:Number}, phot_S_rot
     )
         return _nsr(c, imgdat, photdat, temp2, temp3)
     end
-
-
-    # c_diff = zeros(eltype(photdat), length(photdat))
-    # temp2_diff = copy(temp2)
-    # temp3_diff = copy(temp3)
-    # temp2_d = Duplicated(temp2, temp2_diff)
-    # temp3_d = Duplicated(temp3, temp3_diff)
     temp2_diff = copy(temp2)
     temp3_diff = copy(temp3)
     temp2_d = Duplicated(temp2, temp2_diff)
@@ -461,7 +658,5 @@ function make_nsr_callbacks(refs_O_rotated::AbstractMatrix{<:Number}, phot_S_rot
         )
         return c_diff
     end
-
-
-    (nsr, nsr′)#, snr′_with_primal)
+    (nsr, nsr′)
 end
