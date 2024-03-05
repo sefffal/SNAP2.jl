@@ -1,5 +1,5 @@
 function prepregions(fname::AbstractString; kwargs...)
-    img = load(fname)
+    img = load(first(Glob.glob(fname)))
     return prepregions(img; kwargs...)
 end
 
@@ -25,8 +25,8 @@ function prepregions(
     cy = convert(Float64, img["STAR-Y"])
     xs = axes(img,1) .- cx
     ys = axes(img,2) .- cy
-    Xs = collect(xs .+ 0 .* ys')
-    Ys = collect(0 .* xs .+ ys')
+    # Xs = collect(xs .+ 0 .* ys') # corrent but not currently used
+    # Ys = collect(0 .* xs .+ ys') # corrent but not currently used
     rs = sqrt.(xs.^2 .+ ys'.^2)
     θs = rem2pi.(atan.(ys', xs), RoundDown)
 
@@ -53,7 +53,7 @@ function prepregions(
             push!(S_masks, UInt8.(S_mask))
             # Optiization mask is everything within `opt_thick_px` (while greater than
             # `opt_inner_px`) or at same separation.
-            # TODO: math needs double checking
+            # TODO: buffer is not applying to edges of annular segment
             O_mask = (
                 (opt_inner_px .< rs) .&  (
                     (
