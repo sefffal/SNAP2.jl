@@ -22,13 +22,12 @@ The results are returned, and written out to a file.
 ```
 fnames = Glob.glob("caldir.*.2.initial-cal.fits.gz")
 load(replace(cal["output_psf_path"], ".fits"=>"-cored.fits"))
-search_box_mas = get(conf["calibrate"], "search_box_mas", 1600.0)
 findstar_nirc2(fnames, tempalte)
 ````
 """
 function findstar_nirc2(
     fnames, template_fname,
-    search_box_mas,
+    search_box_px,
     ; verbose=true, force=false, showplots=false)
     verbose && println(Snap.banner()*"\n\nFIND STAR")
 
@@ -47,13 +46,13 @@ function findstar_nirc2(
         mask=nothing,
         centrefit=true,
         normed=false,
-        search_box_mas = 1600.0,
+        search_box_px = 160.0,
         showplot=false,
     )
-        i1 = round(Int,mean(axes(target,1))-search_box_mas/9.971)
-        i2 = round(Int,mean(axes(target,1))+search_box_mas/9.971)
-        i3 = round(Int,mean(axes(target,2))-search_box_mas/9.971)
-        i4 = round(Int,mean(axes(target,2))+search_box_mas/9.971)
+        i1 = round(Int,mean(axes(target,1))-search_box_px)
+        i2 = round(Int,mean(axes(target,1))+search_box_px)
+        i3 = round(Int,mean(axes(target,2))-search_box_px)
+        i4 = round(Int,mean(axes(target,2))+search_box_px)
 
         
 
@@ -135,7 +134,7 @@ function findstar_nirc2(
             template,
             centrefit=false,
             normed=true,
-            search_box_mas=search_box_mas,
+            search_box_px=search_box_px,
             showplot=showplots
         )
         push!(cal, History, "$(Date(Dates.now())): Found star.")
