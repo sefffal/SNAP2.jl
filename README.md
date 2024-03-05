@@ -36,9 +36,24 @@ After calibration, each step appends a new suffix to the end of the filename. Fo
 
 Operations that reduce several files take a "glob" pattern, eg. `myseqname.n*.cal.fits`. If the operation produces a single output file, eg due to stacking, the output filename will be the "glob" pattern with any `*` replaced by `_`, eg. `myseqname.n_.cal.stacked.fits`.
 
+## Installation
+1. [Install Julia 1.10+ via `juliaup`](https://julialang.org/downloads/): `curl -fsSL https://install.julialang.org | sh` (Mac and Linux).
+
+2. Install SNAP. Open julia, and type  the character **`]`**. Then paste:
+```
+add https://github.com/sefffal/Snap2.jl.git
+```
+
+3. Start julia with multiple threads `julia --threads=auto`, and load SNAP: `using Snap`.
+
 ##  Pre-Processing
 
-1. Create a template `.toml` file with the following information. This specifies which frames to use for eg. darks, flats, etc. There are also a few parameters to control pre-processing steps like background subtraction. An example is listed at the bottom of this page.
+1. Create a template `.toml` file that assigns frames to use for eg. darks, flats, etc. There are also a few parameters to control pre-processing steps like background subtraction. **An example is listed at the bottom of this page.**
+
+Starting with an blank `template.toml` file, run this function to print out a list of all your raw files. You can scroll through and copy-paste these entries into the right section of the `template.toml` file.
+```julia
+filetable("myseqname.toml")
+```
 
 2. Run calibration
 ```julia
@@ -106,23 +121,116 @@ S_regions, O_regions = prepregions(
 
 2. Perform a LOCI subtraction on all frames. See `loci2_frame` and `loci2_region!` to only perform LOCI on a single frame, or single region of a frame (faster for experimentation)
 ```julia
-loci2_all("cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz", 5.6 * 0.65, regions[1], regions[2], force=true, psf_fwhm=4.6, N_SVD=30)
+loci2_all(
+    "cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz",
+    # Rejection distances in px to test for best SNR:
+    0 : 2.5 : 10,
+    S_regions,
+    O_regions,
+    # Full-width-at-half max of the planet PSF in pixels for SNR modelling.
+    # Should be approximately 1.22 lambda/D.
+    psf_fwhm=4.6,
+    # Numpber of SVD components to use. 0 means all (no SVD truncation).
+    N_SVD=[5,15,30,60,0]
+)
 # Optional: generate a movie
-seq2gif("cal/myseqname.*.cal.bgub.reg.fluxnorm.sub.fits.gz")
+seq2gif("cal/myseqname.*.cal.bgub.reg.fluxnorm.loci.fits.gz")
 ```
 
 3. Rotate subtracted images North-up and stack.
 ```julia
-rotnorth("cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.fits.gz")
-stackframes(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.rotnorth.fits.gz")
+rotnorth("cal/myseqname.*.cal.bgsub.reg.fluxnorm.loci.fits.gz")
+stackframes(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.loci.rotnorth.fits.gz")
 ```
 
 You could also perform a contrast-weighted stack like so:
 ```julia
-stackframes_contweight(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.sub.rotnorth.fits.gz")
+stackframes_contweight(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.loci.rotnorth.fits.gz")
 ```
 
 
+## Multi-Target SNR Optimization
+
+
+SNR Optimization is a generalization of LOCI/KLIP to account for planet PSF self-subtraction. Rather than rejecting frames that lead to too much planet subtraction, we model the flux contamination of each reference frame and find the linear combination of all frames (including overlapping frames) that maximizes the planet's SNR. **Note: this is not the same as optimizing the parameters of a LOCI reduction!** This operates one level lower in a single step.
+
+In multi-target SNR optimization, we furthermore simultaneously reduce groups of about 10 contiguous frames. The optimizer works directly in the North-up rotated reference frame to optimize the **STACKED** non-linear SNR of that region. 
+
+This is somewhat expensive, since we have to create a set of rotated reference images for each North-up target image, resulting in very large systems of equations. 
+To reduce the scale of this problem somewhat, we apply SVD truncation to any reference images that have little or no flux contaminaion with the target images (less than 10%). For images with higher flux contamination, we bin together images that are more than 0.99 correlated and have less than 2% difference in the forward modelled flux contamination.
+
+This approach could be considered a hybrid SVD/KIP and SNR-Opt.
+
+Intructions:
+1. Prepare subtraction and optimization regions
+```julia
+S_regions, O_regions = prepregions(
+    "cal/myseqname.n*.cal.bgsub.reg.fluxnorm.inject.fits.gz",
+    sub_inner_px=6,
+    sub_thick_px=10,
+    sub_outer_px=56,
+    opt_inner_px=6,
+    opt_thick_px=15,
+    buf_px=5,
+    num_sectors=3
+);
+```
+
+2. Run mult-target SNR optimization. You can provide a list of different `N_SVD` values to perform the reduction with different numbers of SVD components. Fewer components will extrapolate better from the optimization to the subtraction region (less overfitting) but might not model the noise as well. A value of `0` means to include all reference images (no SVD truncation).
+```julia
+snropt_multitarg(
+    "cal/myseqname.n*.cal.bgsub.reg.fluxnorm.fits.gz",
+    S_regions,
+    O_regions,
+    # Full-width-at-half max of the planet PSF in pixels for SNR modelling.
+    # Should be approximately 1.22 lambda/D in detector pixels.
+    psf_fwhm=9.28,
+    # Numpber of SVD components to use. 0 means all (no SVD truncation).
+    # SVD is only applied to reference frames with less than 10% flux contamination.
+    N_SVD=[5,15,30,60,120,0]
+);
+```
+
+3. Stack frames. You don't have to rotate them North-up first, since that happens during the multi-target SNR optimization.
+```julia
+stackframes(median, "cal/myseqname.n*.cal.bgsub.reg.fluxnorm.rotnorth.snropt.fits.gz")
+```
+
+
+## Single-Target SNR Optimization
+
+These functions perform SNR-optimization on a single target image which has not yet been rotated North-up (its basically just LOCI with the math changed out).
+
+1. Prepare regions (see above)
+```julia
+S_regions, O_regions = prepregions(
+    "cal/myseqname.n*.cal.bgsub.reg.fluxnorm.inject.fits.gz",
+    sub_inner_px=6,
+    sub_thick_px=10,
+    sub_outer_px=56,
+    opt_inner_px=6,
+    opt_thick_px=15,
+    buf_px=5,
+    num_sectors=3
+);
+```
+
+2. Run single-target SNR-Optimization on all frames. See `snropt_frame` to only process a single frame and `snropt_region!` to only process a single region of a frame.
+```julia
+snropt_all(
+    "cal/myseqname.n*.cal.bgsub.reg.fluxnorm.inject.fits.gz",
+    S_regions,
+    O_regions,
+    psf_fwhm=9.28/2,
+    N_SVD=[5,15,30,]
+);
+```
+
+3. Rotate North-up and stack:
+```julia
+rotnorth("cal/myseqname.*.cal.bgsub.reg.fluxnorm.snropt.fits.gz")
+stackframes(median, "cal/myseqname.*.cal.bgsub.reg.fluxnorm.snropt.rotnorth.fits.gz")
+```
 
 
 
