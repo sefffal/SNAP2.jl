@@ -92,7 +92,7 @@ seq2gif("cal/myseqname.*.cal.bgsub.reg.fluxnorm.fits.gz", crop=150, clims=px -> 
 ## Quick median subtraction
 Use this for eg live processing during an observing run. This function simply stacks the PSFs with a median, subtracts that median from all images, rotates them North-up, and stacks the residuals.
 ```julia
-avesub("cal/abaur.n*.cal.bgsub.reg.fluxnorm.fits.gz")
+medsub("cal/abaur.n*.cal.bgsub.reg.fluxnorm.fits.gz")
 ```
 
 
