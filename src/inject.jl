@@ -7,6 +7,8 @@ Another script rotates and/or scales reference frames to match a given target fr
 
 =#
 
+export inject
+
 using LinearAlgebra
 function inject(
     pattern::AbstractString;

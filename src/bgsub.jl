@@ -13,6 +13,8 @@ using ImageTransformations: ImageTransformations
 using ProgressLogging
 using AstroImages
 
+export bgsub
+
 """
 This function peforms sky background calibration, with sky frames
 and/or chopping.
@@ -312,5 +314,3 @@ function checknansdebug(img,fname="")
         error("NANs $fname")
     end
 end
-
-bgsub_nirc2(args...)=error()

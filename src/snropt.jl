@@ -23,6 +23,7 @@ using Optim: Optim
 #     from the subtracted image and assume it's consistent between annular sectors.
 # Could also do this on the full stack if we used a mean, but not easily if we used a median.
 
+export snropt_region!, snropt_frame, snropt_all, snropt_multitarg
 
 function snropt_all(fnames_pattern, regions_S, regions_O; force=false, kwargs...)
     fnames = glob(fnames_pattern)

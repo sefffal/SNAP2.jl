@@ -2,6 +2,9 @@ using AstroImages
 using GIFImages
 using Glob
 using CairoMakie:Makie
+
+export seq2gif
+
 function seq2gif(
     pattern::AbstractString,
     outname=replace(pattern, "*"=>"_", ".fits"=>".mp4",".gz"=>"");

@@ -1,3 +1,6 @@
+
+export prepregions
+
 function prepregions(fname::AbstractString; kwargs...)
     img = load(first(Glob.glob(fname)))
     return prepregions(img; kwargs...)

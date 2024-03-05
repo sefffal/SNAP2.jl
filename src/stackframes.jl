@@ -1,5 +1,8 @@
 using Statistics, StatsBase
 using Interpolations
+
+export stackframes, stackframes_contweight
+
 """
     stackframes_contweight(func, filepaths)
     stackframes_contweight(filepaths)
@@ -88,9 +91,6 @@ end
 Given a glob pattern matching one or more files, stack the files weighted by contrast.
 Function defaults to a contrast-weighted median.
 """
-function stackframes(pattern::AbstractString; force=false)
-    return stackframes(median, pattern; force)
-end
 function stackframes(pattern::AbstractString; force=false)
     return stackframes(median, pattern; force)
 end

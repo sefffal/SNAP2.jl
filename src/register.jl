@@ -4,7 +4,10 @@ using ImageFiltering
 using CoordinateTransformations, ImageTransformations
 using ImageTransformations.Interpolations
 using FITSIO
-function register(pattern, template_fname; force=false)
+
+export register
+
+function register(pattern::AbstractString, template_fname::AbstractString; force=false)
     fnames = Glob.glob(pattern)
     template = load(template_fname)
 

@@ -13,6 +13,9 @@ using ImageTransformations: ImageTransformations
 using ProgressLogging
 using AstroImages
 using ImageFiltering
+
+export findstar_nirc2
+
 """
 This function finds the rough location of the star in a sequence of images.
 It does this by cross-correlating a template.

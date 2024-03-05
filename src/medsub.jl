@@ -1,4 +1,6 @@
 
+export medsub
+
 """
 Given a single reference, typically and average stack of all frames,
 subtract it from the set of matching frames, rotate those residuals

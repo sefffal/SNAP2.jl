@@ -5,7 +5,11 @@ using CoordinateTransformations, ImageTransformations
 using ImageTransformations.Interpolations
 using FITSIO
 using CairoMakie: Makie
-function fluxnorm(pattern)
+
+
+export fluxnorm
+
+function fluxnorm(pattern::AbstractString)
     fnames = Glob.glob(pattern)
     
     # Load small cutouts around the star

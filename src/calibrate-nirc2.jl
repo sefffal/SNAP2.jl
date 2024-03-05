@@ -12,6 +12,8 @@ using ImageTransformations: ImageTransformations
 using ProgressLogging
 using AstroImages
 
+export calibrate_nirc2
+
 """
     calibrate("sequences/abc/profile.toml")
 

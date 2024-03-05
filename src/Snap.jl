@@ -40,6 +40,24 @@ include("find-star.jl")
 include("dewarp-nirc2.jl")
 include("crop.jl")
 
+include("bgsub.jl")
+include("calibrate-nirc2.jl")
+include("contrast.jl")
+include("filetable.jl")
+include("findstar-nirc2.jl")
+include("fluxnorm.jl")
+include("inject.jl")
+include("loci2.jl")
+include("medsub.jl")
+include("prepregions.jl")
+include("register.jl")
+include("rotnorth.jl")
+include("rotnorthrefs.jl")
+include("seq2gif.jl")
+include("shift-n-stack.jl")
+include("snropt.jl")
+include("stackframes.jl")
+
 const as_per_rad = 206265
 
 

@@ -4,6 +4,9 @@ using CoordinateTransformations: CoordinateTransformations
 using Rotations: Rotations
 using LinearAlgebra
 
+
+export rotnorthrefs
+
 """
 Given a pattern matching multiple calibrated, registered files, 
 rotate all frames North-up, and prepare a folder of all reference images.

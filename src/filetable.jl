@@ -1,4 +1,6 @@
 
+export filetable
+
 # Can be a list of paths, or a shell glob pattern.
 function loadfiles(paths::AbstractArray)
     read.(paths, RasterImage)

@@ -2,6 +2,9 @@ using FITSIO
 using StatsBase
 using TSVD # truncated SVD library
 using PSFModels: PSFModels
+
+export loci2_region, loci2_region!, loci2_frame, loci2_all
+
 function loci2_region(fname, refnames_pattern::AbstractString, rotthreshpx, region_S, region_O; kwargs...)
     target = load(fname)
     outfname = replace(fname, ".fits"=>".loci.fits")

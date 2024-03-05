@@ -11,6 +11,9 @@ using ImageTransformations
 using CoordinateTransformations: CoordinateTransformations
 using Rotations: Rotations
 using LinearAlgebra
+
+export rotnorth
+
 function rotnorth(
     pattern::AbstractString,
     offset=[0,0];

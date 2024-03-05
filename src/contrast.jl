@@ -3,6 +3,8 @@ using CairoMakie: Makie
 using Glob
 using StatsBase
 
+export imgsep, imgang, contrast, contrastplot
+
 function imgsep(img::AstroImage)
     if haskey(img, "STAR-X")
         cx = Float64(img["STAR-X"])::Float64

@@ -1,3 +1,6 @@
+
+export shiftnstack
+
 function shiftnstack(pattern::AbstractString,xs=(-2:2),ys=(-2:2))
     fnames = glob(pattern)
     fnames_rot = replace.(fnames, (".fits"=>".rotnorth.fits",))
