@@ -74,7 +74,7 @@ function loci2_region!(
     println("initial\t\t\t\t\t\t: $(best_SNR)\t*")
     for rotthreshpx_val in rotthreshpx
         
-        allowed = sep .* rem2pi.(abs.(angle .- angles), RoundDown) .> rotthreshpx_val
+        allowed = sep .* tan.(rem2pi.(abs.(angle .- angles), RoundDown)) .> rotthreshpx_val
         valid_II = findall(allowed)
 
         ## Given a list of frames, calculate the photometry of the planet at the mean location
