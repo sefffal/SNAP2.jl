@@ -114,11 +114,6 @@ function loci2_region!(
         if count(valid) == 0
             continue
         end
-        # f,ax,pl = Makie.scatterlines(
-        #     ref_planet_pa
-        # )
-        # Makie.hlines!(ax,inject_planet_pa_ave)
-        # display(f)
 
         # Calculate actual models to see what the PSF looks like
         # targ_M = psf_model.(
@@ -172,10 +167,6 @@ function loci2_region!(
             # refs_S_rotated = U[count(valid)+1:end,:]
             # phot_S_rotated = phot_of_ref_at_target_inject_location[valid_II]'*V
 
-            # U is now our reference optimization zone.
-            # We also want to rotate our subtraction zone in the same way, so that we will be able to apply the correction.
-            # refs_S_rotated = refs_S*V
-
             ## Linear solve
             c = refs_O_rotated \ targ_O[valid]
             # prob = LinearProblem(refs_O_rotated, Float32.(targ_O[valid]))
@@ -187,27 +178,12 @@ function loci2_region!(
             # @showtime sol = solve(prob, SimpleLUFactorization())#, KrylovJL_GMRES())
             # c = sol.u
 
-            # ## Linear solve
-            # # c = refs_O[valid,:] \ targ_O[valid]
-            # prob = LinearProblem(Float32.(refs_O[valid,:]), Float32.(targ_O[valid]))
-            # # @showtime sol = solve(prob, SVDFactorization())#, KrylovJL_GMRES())
-            # sol = solve(prob, QRFactorization())#, KrylovJL_GMRES())
-            # # @showtime sol = solve(prob, NormalCholeskyFactorization())#, KrylovJL_GMRES())
-            # # @showtime sol = solve(prob, RFLUFactorization())#, KrylovJL_GMRES())
-            # # @showtime sol = solve(prob, AppleAccelerateLUFactorization())#, KrylovJL_GMRES())
-            # # @showtime sol = solve(prob, SimpleLUFactorization())#, KrylovJL_GMRES())
-            # c = sol.u
-
-
-
             # Normal output
-            # out[region_S] .= target[region_S] .- vec(sum(reshape(c,1,:) .* refs_S_rotated,dims=2))
             processed_S = target[region_S] .- refs_S_rotated*c
 
             # Model output:
             # processed_S .= targ_M .- vec(sum(reshape(c,1,:) .* refs_M_rotated,dims=2))
 
-            # display(imview(out))
             phot_out = phot_of_target_at_inject_location .- dot(c, phot_S_rotated)
             
             throughput = phot_out/phot_of_target_at_inject_location
@@ -229,18 +205,6 @@ function loci2_region!(
 
     println("improvement = $(best_SNR/init_SNR)")
     println()
-
-    # @show size(valid) count(valid) size(refs_O_rotated)
-
-
-    # modes = zeros(size(region_O)...,size(refs_O_rotated,2))
-    # modes_region_O = @view modes[region_O,:]
-    # modes_region_O[valid,:] .=refs_O_rotated
-    # modes_region_S = @view modes[region_S,:]
-    # modes_region_S .= refs_S_rotated
-    
-    # return modes
-
 end
 
 function loci2_frame(fname, refnames_pattern, rotthreshpx, region_S, region_O; kwargs...)
@@ -287,9 +251,7 @@ function loci2_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=fals
             fill!(out, NaN)
         end
 
-        # for (reg_S, reg_O) in zip(regions_S, regions_O)
-        # Threads.@threads :dynamic 
-        for (reg_S, reg_O) in collect(zip(regions_S, regions_O))
+        for (reg_S, reg_O) in zip(regions_S, regions_O)
             loci2_region!(out, imgs[i], refs_this, rotthreshpx, reg_S.>0, reg_O.>0, refcube_this; kwargs...)
         end
         AstroImages.writefits(outfname, out)      
