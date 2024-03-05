@@ -44,7 +44,7 @@ Operations that reduce several files take a "glob" pattern, eg. `myseqname.n*.ca
 add https://github.com/sefffal/Snap2.jl.git
 ```
 
-3. Start julia with multiple threads `julia --threads=auto`, and load SNAP: `using Snap`.
+3. Start julia with multiple threads `julia --threads=auto`, and load SNAP: `using SNAP`.
 
 ##  Pre-Processing
 
