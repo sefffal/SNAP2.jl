@@ -9,7 +9,7 @@ using CairoMakie: Makie
 
 export fluxnorm
 
-function fluxnorm(pattern::AbstractString, ignoreinner=5)
+function fluxnorm(pattern::AbstractString; ignoreinner=5)
     fnames = Glob.glob(pattern)
     
     # Load small cutouts around the star
@@ -17,9 +17,9 @@ function fluxnorm(pattern::AbstractString, ignoreinner=5)
         img = load(fname)
         x = round(Int, img["STAR-X"])
         y = round(Int, img["STAR-Y"])
-        cutout = img[x-20:x+20, y-20:y+20] 
-        cutout[imgsep(cutout).<ignoreinner] .= 0
-        return mapwindow(median, cutout, (3,3))
+        img[imgsep(img).<ignoreinner] .= 0
+        cutout = img[x-35:x+35, y-35:y+35] 
+        return cutout#mapwindow(median, cutout, (3,3))
     end
 
     # Stack and treat this average as the flux target
