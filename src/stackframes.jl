@@ -15,6 +15,11 @@ function stackframes_contweight(pattern::AbstractString; force=false)
     outname = replace(pattern, "*"=>"_", ".fits"=>".stackedw.fits")
     return stackframes_contweight(median, fnames, outname; force)
 end
+function stackframes_contweight(method::Base.Callable, pattern::AbstractString; force=false)
+    fnames = Glob.glob(pattern)
+    outname = replace(pattern, "*"=>"_", ".fits"=>".stackedw.fits")
+    return stackframes_contweight(method, fnames, outname; force)
+end
 function stackframes_contweight(method::Base.Callable, fnames::Vector{<:AbstractString}, outname::AbstractString;force=false)
 
     # Check if there is any work to do
