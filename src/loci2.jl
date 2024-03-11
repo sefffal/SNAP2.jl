@@ -35,9 +35,19 @@ function loci2_region!(
     rs = imgsep(target)
     θs = imgang(target)
     sep = mean(rs[region_S])
-    angle = deg2rad(target["ANGLE_MEAN"]::Float64)
-    angles = deg2rad.(getindex.(refs, "ANGLE_MEAN")::Vector{Float64})
+    angle = deg2rad(Float64(target["ANGLE_MEAN"])::Float64)
+    angles = deg2rad.(Float64.(getindex.(refs, "ANGLE_MEAN"))::Vector{Float64})
 
+    out[region_S] .= target[region_S]
+
+    if count(region_S) == 0 || count(region_O) == 0
+        @warn "cannot perform PSF subtraction with an empty region " count(region_S) count(region_O)
+    end
+
+    if length(filter(isfinite, target[region_S])) == 0
+        @warn "empty or all-NaN subtraction region"
+        return
+    end
 
     # We simulate the planet at the average PA and average separation of the target subtraction
     # region.
@@ -58,27 +68,32 @@ function loci2_region!(
 
     targ_O = target[region_O]
 
-    # Identify the pixels that are safe to use for evaluating the SNR of the subtraction
-    # Avoid looking at bad pixels
-    # Ignore the bottom and top 0.5% of pixels
-    clip_ex = extrema(StatsBase.trim(vec(target[region_S]); prop=0.01)) # Find std, while ignoring 5% most deviated pixels
+   
+    clip_std = std(StatsBase.trim(vec(target[region_S]); prop=0.05)) # Find std, while ignoring 10% most deviated pixels
     region_S_valid = all(
-        (clip_ex[1] .< refcube[region_S,:] .< clip_ex[2]) .&
-        (clip_ex[1] .< target[region_S] .< clip_ex[2]),
+        (-4clip_std .< target[region_S] .< 4clip_std),
         dims=2
     )[:]
-    if count(region_S_valid) == 0
-        return
+    # Don't do this clipping if we end up with nothing left, or take too much
+    if count(region_S_valid) == 0 || mean(region_S_valid) < 0.25
+        region_S_valid .= true
     end
 
+    # TODO: it would be better to work in fractions of psf_fwhm.
+    # We also should de-duplicate. There are often frames where we are spinning
+    # fast enough that a threshold of x and a threshold of y px work out to the 
+    # same frames.
+
     # Loop through optimizing the rejection thrreshold ratio
-    out[region_S] .= target[region_S]
     init_SNR = best_SNR = 1.0 / sqrt(mean(target[region_S][region_S_valid].^2))
     println("initial\t\t\t\t\t\t: $(best_SNR)\t*")
     for rotthreshpx_val in rotthreshpx
-        
-        allowed = sep .* tan.(rem2pi.(abs.(angle .- angles), RoundDown)) .> rotthreshpx_val
+        distances =  sep .* tan.(rem2pi.(abs.(angle .- angles), RoundDown))
+        allowed = distances .> rotthreshpx_val
         valid_II = findall(allowed)
+        if isempty(valid_II)
+            continue
+        end
 
         ## Given a list of frames, calculate the photometry of the planet at the mean location
         # of the target frame.
@@ -106,10 +121,9 @@ function loci2_region!(
         if count(valid) == 0
             continue
         end
-          
         # Reject pixels that are strongly deviated from the clipped standard deviation.
         clip_std = std(StatsBase.trim(vec(view(refs_O,valid,:)); prop=0.05)) # Find std, while ignoring 5% most deviated pixels
-        valid .&= all((-5clip_std .< view(refs_O,valid,:) .< 5clip_std) .& (-5clip_std .< view(targ_O,valid) .< 5clip_std),dims=2) 
+        valid .&= all((-5clip_std .< refs_O .< 5clip_std) .& (-5clip_std .< targ_O .< 5clip_std),dims=2) 
     
         if count(valid) == 0
             continue
@@ -143,15 +157,26 @@ function loci2_region!(
         # out[region_S] .= targ_M
         # return out, outs
 
+        if maximum(N_SVD) > 0
+            U, s, V = tsvd(Float32.(refs_O[valid,:]), min(maximum(N_SVD), size(refs_O,2)))
+        end
+
         for n_SVD in N_SVD
+            if n_SVD > size(U, 2)
+                continue
+            end
 
             ## SVD
-            U, s, V = tsvd(Float32.(refs_O[valid,:]), n_SVD)
-            # U, s, V = svd(Float32.(refs_O[valid,:]))
-            refs_O_rotated = U
-            refs_S_rotated = refs_S *V * inv(Diagonal(s))
-            phot_S_rotated = phot_of_ref_at_target_inject_location'*(V*inv(Diagonal(s)))
-            # refs_M_rotated =  refs_M*V*inv(Diagonal(s))
+            if n_SVD == 0
+                refs_O_rotated = refs_O[valid,:]
+                refs_S_rotated = refs_S 
+                # refs_M_rotated = refs_M_bin
+                phot_S_rotated = phot_of_ref_at_target_inject_location
+            else
+                refs_O_rotated = U[:,1:n_SVD]
+                refs_S_rotated = refs_S[:,:] * V[:,1:n_SVD] * inv(Diagonal(s[1:n_SVD]))
+                phot_S_rotated = (phot_of_ref_at_target_inject_location[:]'*( V[:,1:n_SVD] * inv(Diagonal(s[1:n_SVD]))))'
+            end
 
 
             # refs_O_rotated = refs_O[valid,:]
@@ -191,8 +216,19 @@ function loci2_region!(
             # Throughput normalize (just once for full anulus)
             processed_S ./= throughput
 
-            # end of N_SVD optimization loop
+
+            clip_std = std(StatsBase.trim(vec(processed_S); prop=0.05)) # Find std, while ignoring 10% most deviated pixels
+            region_S_valid = all(
+                (-4clip_std .< processed_S .< 4clip_std),
+                dims=2
+            )[:]
+            # Don't do this clipping if we end up with nothing left, or take too much
+            if count(region_S_valid) == 0 || mean(region_S_valid) < 0.25
+                region_S_valid .= true
+            end
+
             new_SNR = 1.0 ./ sqrt(mean(processed_S[region_S_valid].^2))
+
             print("\trotthreshpx=$rotthreshpx_val  \tn_SVD=$n_SVD \t: $(new_SNR)")
             if new_SNR > best_SNR
                 print("\t*")

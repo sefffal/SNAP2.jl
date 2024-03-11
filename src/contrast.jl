@@ -53,15 +53,16 @@ function contrast(img::AstroImage; step=4)
     end
     return bins, cont
 end
-function contrast(pattern::AbstractString; force=false)
+function contrast(pattern::AbstractString; force=false, step=4)
     fnames = Glob.glob(pattern)
-    return contrast(fnames; force)
+    return contrast(fnames; force, step)
 end
-function contrast(fnames::AbstractVector{<:AbstractString}; force=false)
+function contrast(fnames::AbstractVector{<:AbstractString}; force=false, step=4)
     contrasts = []
     for fname in fnames
         # Calculate contrast if not there, or load
         outfname_txt = replace(fname, "*"=>"_", ".fits"=>".contrast.txt", ".gz"=>"", ".rotnorth."=>".", ".rotback."=>".")
+        # TODO: check itime
         if !force && isfile(outfname_txt)
             open(outfname_txt) do f
                 header = readline(f) # skip first line
@@ -77,7 +78,7 @@ function contrast(fnames::AbstractVector{<:AbstractString}; force=false)
             continue
         end
         img = load(fname)
-        seps,conts = contrast(img)
+        seps,conts = contrast(img, step=4)
         push!(contrasts, (seps, conts))
         open(outfname_txt, write=true) do f
             println(f, "sep_px, 1sigcont")

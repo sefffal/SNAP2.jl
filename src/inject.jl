@@ -69,6 +69,9 @@ function inject(
         applied["INJ_PA",Comment] = "PA [deg] of injected planet"
         applied["INJ_SEP"] = sep_px
         applied["INJ_SEP",Comment] = "Sep [px] of injected planet"
+        applied["INJ_AMP"] = psf_amp
+        applied["INJ_AMP",Comment] = "Peak value of injected planet"
+        
         AstroImages.writefits(outfname, applied)
         if invert
             println(outfname, " $(i) \t inject back ", rad2deg(rot_rad))

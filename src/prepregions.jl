@@ -47,6 +47,7 @@ function prepregions(
     
     S_masks = []
     O_masks = []
+    M_masks = []
     for i_radius in eachindex(annuli_starts)
         for i_sector in 1:num_sectors
             S_mask = (
@@ -54,7 +55,7 @@ function prepregions(
                 (sector_starts[i_sector] .<= θs .<= sector_stops[i_sector])
             )
             push!(S_masks, UInt8.(S_mask))
-            # Optiization mask is everything within `opt_thick_px` (while greater than
+            # Optization mask is everything within `opt_thick_px` (while greater than
             # `opt_inner_px`) or at same separation.
             # TODO: buffer is not applying to edges of annular segment
             O_mask = (
@@ -70,6 +71,11 @@ function prepregions(
                 )
             )
             push!(O_masks, UInt8.(O_mask))
+
+            M_mask = (
+                annuli_starts[i_radius] .- opt_thick_px .< rs .<= annuli_stops[i_radius] .+ opt_thick_px
+            )
+            push!(M_masks, UInt8.(M_mask))
 
             # O_mask = annuli_starts[i_radius] .<= rs .<= annuli_stops[i_radius]
             # # Find pixels close enough
@@ -95,5 +101,6 @@ function prepregions(
     end
     AstroImages.writefits("masks.S.fits", S_masks...)
     AstroImages.writefits("masks.O.fits", O_masks...)
-    return S_masks, O_masks
+    AstroImages.writefits("masks.M.fits", M_masks...)
+    return S_masks, O_masks, M_masks
 end

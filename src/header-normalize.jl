@@ -143,13 +143,20 @@ function header_normalize!(
 end
 
 function header_getinst(img::AstroImage)
-    if haskey(img, "TELESCOP") &&
-        startswith(img["TELESCOP"], "Keck") &&
-        haskey(img, "CURRINST") &&
-        img["CURRINST"] == "NIRC2"
+    tel = ""
+    if haskey(img, "TELESCOP")
+        tel = img["TELESCOP"]
+    end
+    inst = ""
+    if haskey(img, "CURRINST")
+        inst = img["CURRINST"]
+    end
+    if startswith(tel, "Keck") &&
+        startswith(inst, "NIRC2")
         return :NIRC2
     else
-        @warn "instrument not detected or implemented"
+        @warn "instrument not detected or implemented" tel inst
+        return
     end
 end
 

@@ -27,9 +27,8 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     verbose && println(SNAP.banner()*"\n\nCALIBRATE")
    
     # Read the configuration
-    conf = SNAP.readconfig(conf_fname)
+    conf = TOML.parsefile(conf_fname)
     cal = conf["calibrate"]
-    λoverD = conf["telescope"]["λoverD"];
 
     # Set up some nice file paths 
     # Create a nice sanitized name for reporting these results
@@ -134,9 +133,9 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         # bpm.= 0
         @show cal["badpix"]
         bpm = stackframes(loadfiles(cal["badpix"]), sum)
-        # med = median(filter(isfinite, bpm_manual))
-        bpm = crop_A_to_B(bpm, fs1)
-        # bpm[bpm_manual .> med] .= NaN
+        med = median(filter(isfinite, bpm))
+        bpm = float.(crop_A_to_B(bpm, fs1))
+        bpm[bpm .> 2med] .= NaN
     else
         SNAP.excludebadpixels!(bpm, 2.5, 2)
     end
@@ -144,42 +143,11 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         @info "Cropping bpm to match first data file dimensions."
         bpm = crop_A_to_B(bpm, fs1)
     end
-    bpm = collect(bpm)
-
-    # If a pixel exceeds 4sigma the surrounding 6x6 pixel box (2 pixels on either side),
-    # then mark it as bad.
-    bpm[isfinite.(bpm)] .= 0.0
-
-    @show size(bpm)
-    dark = SNAP.interpbadpixels!(dark .+ bpm)
-
-    verbose && @info "Compiling flat frames"
-    fnames_flaton = map(fnames_flaton) do img
-        img = crop_A_to_B(img, fs1)
-        # Bad pixel map has 0 everywhere except NaN on bad pixels
-        img = img.+bpm
-        SNAP.interpbadpixels!(img)
-        return img
-    end
-    fnames_flatoff = map(fnames_flatoff) do img
-        img = crop_A_to_B(img, fs1)
-        # Bad pixel map has 0 everywhere except NaN on bad pixels
-        img = img.+bpm
-        SNAP.interpbadpixels!(img)
-        return img
-    end
-
-    length(fnames_dark_psf) == 0 && error("No matching dark_psf frames")
-    length(fnames_flaton) == 0 && error("No matching flaton frames")
-    length(fnames_flatoff) == 0 && error("No matching flatoff frames")
-
-
 
 
     ##
-    darkpsf = stackframes(fnames_dark_psf, median)
-    flaton  = stackframes(fnames_flaton, median)
-    flatoff = stackframes(fnames_flatoff, median)
+    darkpsf = stackframes(fnames_dark_psf, median)[:,:]
+
 
 
     psfs     = loadfiles_lin(cal["raw_psf_path"])
@@ -188,46 +156,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     # ideally we want to do dark scaling. But mostly we do not have a bias.
     # Instead, the dark is effectively the bias frame and the sky is the "dark"
 
-    # Flat is difference between flat lamp on and off.
-    # No need to dark subtract
-    flat = copyheader(flaton, flaton .- flatoff)
-    
-    # Calibrate sky using dark and flat
-    flatmed = median(filter(isfinite, flat))
 
-    if any(==(0), flat)
-        @warn "zero values present in flats! This may lead to poor results"
-        flat[flat .== 0] .= flatmed
-    end
-
-
-        
-    if get(cal, "skipsky", false) || length(fnames_sky) == 0
-        sky = deepcopy(dark)
-        fill!(sky, 0)
-        sky = [sky]
-        @warn("No matching sky frames or skipsky=true")
-    else
-        # We support grouped batches of sky filenames stacked together, and then LOCI subtracted
-        if eltype(fnames_sky) <: AbstractString
-            skys = [[sky] for sky in loadfiles_lin(fnames_sky)]
-        else
-            skys = map(fnames_sky) do fnames_group
-                loadfiles_lin(fnames_group)
-            end
-        end
-        skyraw = map(fnames->stackframes(fnames, median), skys)
-        @info "Sky groups" N=length(skyraw)
-        sky = map(
-                skyraw->copyheader(
-                    skyraw,
-                    (skyraw .- dark) ./ flat .* flatmed .+ bpm,
-                ),
-                skyraw
-        )
-        sky = map(SNAP.interpbadpixels!,sky)
-        # sky.data ./= sky.headers["TOTEXP"]
-    end
         
     length(fnames_sky_psf) == 0 && @warn("No matching sky_psf frames")
     if length(fnames_sky_psf) > 0
@@ -246,28 +175,6 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     flatmedpsf = median(filter(isfinite, skypsfraw))
     
 
-    if size(flat) != size(fs1)
-        @info "Cropping flat to match first data file dimensions."
-        flat = crop_A_to_B(flat, fs1)
-    end
-    sky = map(sky) do s
-        if size(s) != size(fs1)
-            @info "Cropping sky frame to match first data file dimensions."
-            s = crop_A_to_B(s, fs1)
-        end
-        return s
-    end
-
-    ## Optionally write out copies of the masters
-    if write_masters && savedata
-        verbose && @info "Writing masters"
-        AstroImages.writefits("$caldir.dark.fits.gz", dark)
-        AstroImages.writefits("$caldir.darkpsf.fits.gz", darkpsf)
-        AstroImages.writefits("$caldir.skypsf.fits.gz", skypsf)
-        AstroImages.writefits("$caldir.flat.fits.gz", flat)
-        AstroImages.writefits("$caldir.sky.fits.gz", sky...)
-        AstroImages.writefits("$caldir.bpm.fits.gz", bpm)
-    end
 
     ###
     verbose && @info "Calibrating PSF images"
@@ -282,7 +189,8 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         # Remove any weird bias offset between PSF and data
         dat = dat .- median(filter(isfinite,[collect(dat[begin:begin+3,:]) collect(dat[end-3:end,:])]))
         psfcal = copyheader(psf,dat)
-        SNAP.interpbadpixels!(psfcal)
+        psfcal = SNAP.interpbadpixels!(psfcal)
+        psfcal[.!isfinite.(psfcal)] .= median(filter(isfinite, psfcal))
         return psfcal
     end
     if write_masters && savedata
@@ -330,16 +238,114 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         end
     end
     psf = copyheader(first(transformed_psfs), psf_data)
-
     showplots && display(imview(psf))
 
     # Create a copy without the central core for using as a cross correlation with saturated images
     psf_cored = deepcopy(psf)
+    r = imgsep(psf_cored)
+    psf_cored[r .< 8] .= 0
 
     savedata && verbose && @info "Saving PSF"
     savedata && AstroImages.writefits(cal["output_psf_path"],psf)
     savedata && verbose && @info "Saving cored PSF"
     savedata && AstroImages.writefits(replace(cal["output_psf_path"], ".fits"=>"-cored.fits"), psf_cored) 
+
+
+    # If a pixel exceeds 4sigma the surrounding 6x6 pixel box (2 pixels on either side),
+    # then mark it as bad.
+    bpm[isfinite.(bpm)] .= 0.0
+
+    dark = SNAP.interpbadpixels!(dark .+ bpm)
+
+    verbose && @info "Compiling flat frames"
+    fnames_flaton = map(fnames_flaton) do img
+        img = crop_A_to_B(img, fs1)
+        # Bad pixel map has 0 everywhere except NaN on bad pixels
+        img = img.+bpm
+        SNAP.interpbadpixels!(img)
+        return img
+    end
+    fnames_flatoff = map(fnames_flatoff) do img
+        img = crop_A_to_B(img, fs1)
+        # Bad pixel map has 0 everywhere except NaN on bad pixels
+        img = img.+bpm
+        SNAP.interpbadpixels!(img)
+        return img
+    end
+
+    length(fnames_dark_psf) == 0 && error("No matching dark_psf frames")
+    length(fnames_flaton) == 0 && error("No matching flaton frames")
+    length(fnames_flatoff) == 0 && error("No matching flatoff frames")
+
+
+
+    flaton  = stackframes(fnames_flaton, median)[:,:]
+    flatoff = stackframes(fnames_flatoff, median)[:,:]
+
+
+    # Flat is difference between flat lamp on and off.
+    # No need to dark subtract
+    flat = copyheader(flaton, flaton .- flatoff)
+    
+    # Calibrate sky using dark and flat
+    flatmed = median(filter(isfinite, flat))
+
+    if any(==(0), flat)
+        @warn "zero values present in flats! This may lead to poor results"
+        flat[flat .== 0] .= flatmed
+    end
+
+        
+    if get(cal, "skipsky", false) || length(fnames_sky) == 0
+        sky = deepcopy(dark)
+        fill!(sky, 0)
+        sky = [sky]
+        @warn("No matching sky frames or skipsky=true")
+    else
+        # We support grouped batches of sky filenames stacked together, and then LOCI subtracted
+        if eltype(fnames_sky) <: AbstractString
+            skys = [[sky] for sky in loadfiles_lin(fnames_sky)]
+        else
+            skys = map(fnames_sky) do fnames_group
+                loadfiles_lin(fnames_group)
+            end
+        end
+        skyraw = map(fnames->stackframes(fnames, median), skys)
+        @info "Sky groups" N=length(skyraw)
+        sky = map(
+                skyraw->copyheader(
+                    skyraw,
+                    (skyraw .- dark) ./ flat .* flatmed .+ bpm,
+                ),
+                skyraw
+        )
+        sky = map(SNAP.interpbadpixels!,sky)
+        # sky.data ./= sky.headers["TOTEXP"]
+    end
+    if size(flat) != size(fs1)
+        @info "Cropping flat to match first data file dimensions."
+        flat = crop_A_to_B(flat, fs1)
+    end
+    sky = map(sky) do s
+        if size(s) != size(fs1)
+            @info "Cropping sky frame to match first data file dimensions."
+            s = crop_A_to_B(s, fs1)
+        end
+        return s
+    end
+
+
+    ## Optionally write out copies of the masters
+    if write_masters && savedata
+        verbose && @info "Writing masters"
+        AstroImages.writefits("$caldir.dark.fits.gz", dark)
+        AstroImages.writefits("$caldir.darkpsf.fits.gz", darkpsf)
+        AstroImages.writefits("$caldir.skypsf.fits.gz", skypsf)
+        AstroImages.writefits("$caldir.flat.fits.gz", flat)
+        AstroImages.writefits("$caldir.sky.fits.gz", sky...)
+        AstroImages.writefits("$caldir.bpm.fits.gz", bpm)
+    end
+
 
     verbose && @info "Reading files"
     # Recommend you test with one or two frames to begin

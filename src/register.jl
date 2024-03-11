@@ -7,7 +7,7 @@ using FITSIO
 
 export register
 
-function register(pattern::AbstractString, template_fname::AbstractString; force=false)
+function register(pattern::AbstractString, template_fname::AbstractString; force=false, cropsize=90)
     fnames = Glob.glob(pattern)
     template = load(template_fname)
 
@@ -47,7 +47,7 @@ function register(pattern::AbstractString, template_fname::AbstractString; force
     @info "Loading frames"
     for fname in fnames
         outfname = replace(fname, ".fits"=>".reg.fits",)
-        if force || !isfile(outfname) || Base.Filesystem.mtime(fname) > Base.Filesystem.mtime(outfname)
+        if force || !isfile(outfname) || Base.Filesystem.mtime(fname) > Base.Filesystem.mtime(outfname)  || Base.Filesystem.mtime(template_fname) > Base.Filesystem.mtime(outfname)
             push!(frames, load(fname))
             push!(fnames_out, outfname)
         end
@@ -57,7 +57,6 @@ function register(pattern::AbstractString, template_fname::AbstractString; force
     Threads.@threads :dynamic for (satimg, outfname) in collect(zip(frames,fnames_out))
         x_guess = round(Int, satimg["STAR-X"])
         y_guess = round(Int, satimg["STAR-Y"])
-        cropsize= 100
         c = satimg[x_guess-cropsize:x_guess+cropsize,y_guess-cropsize:y_guess+cropsize]
 
         # x = axes(c,1)

@@ -12,7 +12,7 @@ using CoordinateTransformations: CoordinateTransformations
 using Rotations: Rotations
 using LinearAlgebra
 
-export rotnorth
+export rotnorth, rotrestore
 
 function rotnorth(
     pattern::AbstractString,
@@ -74,6 +74,56 @@ function rotnorth(
         else
             println(outfname, "\t rotnorth ", rot_deg)
         end
+        push!(outfnames, outfname)
+    end
+    return outfnames
+end
+
+
+# Given frames that have been rotated north up, undo the rotation.
+function rotrestore(
+    pattern::AbstractString,
+    offset=[0,0];
+    force=false,
+)
+    fnames = Glob.glob(pattern)
+    outfnames = String[]
+    for fname in fnames
+        outfname = replace(fname,".fits"=>".unrot.fits")
+        if !force && isfile(outfname) && Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
+            push!(outfnames, outfname)
+            continue
+        end
+        img = load(fname)
+        if offset != [0,0]
+            img["ROTOFF-X"] = offset[1]
+            img["ROTOFF-Y"] = offset[2]
+        end
+            
+        cx, cy = (img["STAR-X"], img["STAR-Y"]) .+ offset
+
+        # TODO: must confirm the rotation direction is correct!
+        rot_deg = img["ORIG.ANGLE_MEAN"]
+        rot_rad = deg2rad(rot_deg)
+
+        tfrm = CoordinateTransformations.LinearMap(
+            Rotations.RotMatrix(rot_rad)
+        )
+        tfrm = CoordinateTransformations.recenter(tfrm, (cx,cy))
+        applied_dat = collect(ImageTransformations.warp(
+            collect(img),
+            tfrm,
+            axes(img),
+            # Broken for some reason:...
+            # Interpolations.Quadratic(Interpolations.Flat(Interpolations.OnGrid())),
+            NaN,
+        ))
+
+        applied = copyheader(img, applied_dat)
+        push!(applied, History, "$(Date(Dates.now())): Undid north-up rotation.")
+        applied["ANGLE_MEAN"] = applied["ORIG.ANGLE_MEAN"]
+        AstroImages.writefits(outfname, applied)
+        println(outfname, "\t rot undo ", rot_deg)
         push!(outfnames, outfname)
     end
     return outfnames

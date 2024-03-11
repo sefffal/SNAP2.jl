@@ -146,5 +146,6 @@ function stackframes(method::Base.Callable, imgs::Vector{<:AstroImage}, outname:
     end
     out["STACKFUN", Comment] = "function used to stack data, in order to produce this image"
     AstroImages.writefits(outname, out)
+    println(outname)
     return out
 end

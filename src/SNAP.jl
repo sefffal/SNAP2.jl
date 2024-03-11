@@ -57,6 +57,9 @@ include("seq2gif.jl")
 include("shift-n-stack.jl")
 include("snropt.jl")
 include("stackframes.jl")
+include("matchedfilter.jl")
+include("snrmap.jl")
+include("fixbadpix.jl")
 
 const as_per_rad = 206265
 

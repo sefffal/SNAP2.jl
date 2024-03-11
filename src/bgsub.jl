@@ -27,7 +27,7 @@ function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=fa
     println(SNAP.banner()*"\n\nBGSUB")
    
     # Read the configuration
-    conf = SNAP.readconfig(conf_fname)
+    conf = TOML.parsefile(conf_fname)
     # cal = conf["calibrate"]
     # λoverD = conf["telescope"]["λoverD"];
 

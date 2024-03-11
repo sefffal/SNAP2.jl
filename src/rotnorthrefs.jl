@@ -13,10 +13,20 @@ rotate all frames North-up, and prepare a folder of all reference images.
 Reference images will be rotated and/or scaled such their speckles are still
 aligned with the target image.
 """
-function rotnorthrefs(pattern::AbstractString, refpattern::AbstractString=pattern; force=false)
+function rotnorthrefs(
+    pattern::AbstractString,
+    refpattern::AbstractString=pattern;
+    force=false,
+    save=true
+)
     fnames = Glob.glob(pattern)
     fnames_refs = Glob.glob(refpattern)
 
+    if !save
+        refs_out = AstroImageMat[]
+    end
+
+    # TODO: I would like to find a way to parallelize this.
     for fname in fnames
         # Rotate north or get filename if already done.
         # rotnorthfname = only(rotnorth(fname))
@@ -30,6 +40,9 @@ function rotnorthrefs(pattern::AbstractString, refpattern::AbstractString=patter
         for fname_ref in fnames_refs
             outfname = joinpath(refdir, splitpath(fname_ref)[end])
             if !force && isfile(outfname) && Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
+                if !save
+                    push!(refs_out, load(outfname))
+                end
                 continue
             end
 
@@ -61,8 +74,18 @@ function rotnorthrefs(pattern::AbstractString, refpattern::AbstractString=patter
             applied = copyheader(ref, applied_dat)
             push!(applied, History, "$(Date(Dates.now())): Rotated to match target img North-up angle.")
             applied["ANGLE_MEAN"] = ref["ANGLE_MEAN"] - targ["ORIG.ANGLE_MEAN"]
-            AstroImages.writefits(outfname, applied)
-            println(outfname, "\t rot ref ", rot_deg)
+            
+            if save
+                AstroImages.writefits(outfname, applied)
+                println(outfname, "\t rot ref ", rot_deg)
+            else
+                push!(refs_out, applied)
+                println(outfname, "\t rot ref ", rot_deg, " (no save)")
+            end
         end
+    end
+
+    if !save
+        return refs_out
     end
 end

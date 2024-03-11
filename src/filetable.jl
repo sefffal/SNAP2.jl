@@ -36,12 +36,9 @@ print it to the screen (both can be true).
 
 Returns: nothing.
 """
-function filetable(conf_fname; verbose=true, save=true, showplots=false)
+function filetable(conf_fname::AbstractString; verbose=true, save=true, showplots=false)
 
-    # Read the configuration
-    conf = SNAP.readconfig(conf_fname)
-    cal = conf["calibrate"]
-    λoverD = conf["telescope"]["λoverD"];
+    conf = TOML.parsefile(conf_fname)
 
     # Create a nice sanitized name for reporting these results
     if !occursin('/', conf_fname)
@@ -67,7 +64,9 @@ function filetable(conf_fname; verbose=true, save=true, showplots=false)
     end
     fnames = [
         glob("*.fits*", prefix);
-        glob("*/*.fits*", prefix);
+        glob(".*/*.fits*", prefix);
+        glob("sci/*.fits*",prefix);
+        glob("cal/*.fits*",prefix);
     ]
     verbose && @info("Found $(length(fnames)) fits files")
 
