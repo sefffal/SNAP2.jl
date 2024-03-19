@@ -13,6 +13,9 @@ using AstroImages
 
 export calibrate_nirc2
 
+# TODO: if force=false, do not unecessarily recreate masters.
+# Could perhaps split into two stages: create masters, and calibrate.
+
 """
     calibrate("sequences/abc/profile.toml")
 
@@ -131,11 +134,10 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     if haskey(cal, "badpix")
         verbose && @info "Loading additional manual bad pixel maps"
         # bpm.= 0
-        @show cal["badpix"]
         bpm = stackframes(loadfiles(cal["badpix"]), sum)
         med = median(filter(isfinite, bpm))
         bpm = float.(crop_A_to_B(bpm, fs1))
-        bpm[bpm .> 2med] .= NaN
+        bpm[bpm .> med] .= NaN
     else
         SNAP.excludebadpixels!(bpm, 2.5, 2)
     end
@@ -143,6 +145,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         @info "Cropping bpm to match first data file dimensions."
         bpm = crop_A_to_B(bpm, fs1)
     end
+    bpm = bpm[:,:]
 
 
     ##
@@ -179,7 +182,6 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     ###
     verbose && @info "Calibrating PSF images"
     bpm_psf = SNAP.crop_A_to_B(bpm, first(psfs))
-    # calibrated_psfs = parmap(psfs) do psf
     calibrated_psfs = map(psfs) do psf
         dat = (psf .- darkpsf) ./
             # psf.headers["TOTEXP"]
@@ -239,6 +241,9 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     end
     psf = copyheader(first(transformed_psfs), psf_data)
     showplots && display(imview(psf))
+
+    psf["STAR-X"] = mean(axes(psf,1))
+    psf["STAR-Y"] = mean(axes(psf,2))
 
     # Create a copy without the central core for using as a cross correlation with saturated images
     psf_cored = deepcopy(psf)
@@ -411,8 +416,8 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         push!(cal, History, "$(Date(Dates.now())): replaced bad pixels with neighbours")
 
         # Apply the distortion solution
-        dat = SNAP.nirc2_dewarp!(AstroImage(collect(cal)))
-        cal = copyheader(cal, dat)
+        # dat = SNAP.nirc2_dewarp!(AstroImage(collect(cal)))
+        # cal = copyheader(cal, dat)
 
         verbose && println(fnames_out[i], "\t", cal["DATE-OBS"], " ", cal["UTC"], "\t($i)")
         push!(to_save, (fnames_out[i],cal[:,:]))

@@ -3,7 +3,7 @@ using CairoMakie: Makie
 using Glob
 using StatsBase
 
-export imgsep, imgang, contrast, contrastplot
+export imgsep, imgang, contrast, contrastmap, contrastplot
 
 function imgsep(img::AstroImage)
     if haskey(img, "STAR-X")
@@ -31,6 +31,10 @@ function imgang(img::AstroImage)
     θ = atan.(ys', xs)
     return θ
 end
+
+#= 
+Contrast Curve calculation
+=#
 function contrast(img::AstroImage; step=4)
     rs = imgsep(img)
     # stop = maximum(rs)
@@ -61,9 +65,9 @@ function contrast(fnames::AbstractVector{<:AbstractString}; force=false, step=4)
     contrasts = []
     for fname in fnames
         # Calculate contrast if not there, or load
-        outfname_txt = replace(fname, "*"=>"_", ".fits"=>".contrast.txt", ".gz"=>"", ".rotnorth."=>".", ".rotback."=>".")
+        outfname_txt = replace(fname, "*"=>"_", ".fits"=>".contrast.txt", ".gz"=>"")#, ".rotnorth."=>".", ".rotback."=>".")
         # TODO: check itime
-        if !force && isfile(outfname_txt)
+        if !force && isfile(outfname_txt) && Base.Filesystem.mtime(outfname_txt) > Base.Filesystem.mtime(fname)
             open(outfname_txt) do f
                 header = readline(f) # skip first line
                 seps = Float64[]
@@ -78,7 +82,7 @@ function contrast(fnames::AbstractVector{<:AbstractString}; force=false, step=4)
             continue
         end
         img = load(fname)
-        seps,conts = contrast(img, step=4)
+        seps,conts = contrast(img; step)
         push!(contrasts, (seps, conts))
         open(outfname_txt, write=true) do f
             println(f, "sep_px, 1sigcont")
@@ -88,31 +92,141 @@ function contrast(fnames::AbstractVector{<:AbstractString}; force=false, step=4)
         end
         println(outfname_txt)
     end
-    return contrasts
+    return identity.(contrasts) # promote container type
 end
-function contrastplot(pattern::AbstractString; force=false)
+
+
+function contrastplot(pattern::AbstractString; force=false, platescale=9.971, step=4)
     fnames = Glob.glob(pattern)
-    contrasts = contrast(fnames; force)
     outfname_img = replace(pattern, "*"=>"_", ".fits"=>".png", ".gz"=>"")
+    fig = contrastplot(fnames, outfname_img; force, platescale, step)
+    Makie.save(outfname_img, fig)
+    return fig
+end
+function contrastplot(fnames::AbstractArray{<:AbstractString}; force=false, platescale=9.971, step=4)
+    contrasts = contrast(fnames; force, step)
     fig = Makie.Figure(
-        size=(900,600)
+        size= length(fnames) > 1 ? (700,800) : (700,600)
     )
-    # TODO: could add separation in MAS as a second x axis.
     ax = Makie.Axis(
         fig[1,1],
         xlabel="separation [px]",
         ylabel="1σ contrast",
-        yscale=Makie.pseudolog10
+        yscale=log10,
+        xgridvisible=false,
+        yminorticksvisible=true,
+        yminorticks=Makie.IntervalsBetween(9),
+        yticks=10.0 .^ (-10:10),
+        xminorticks=Makie.IntervalsBetween(10),
+        xminorticksvisible=true,
+        ygridvisible=true,
+        yminorgridvisible=true,
     )
+    maxsep = 0
     for (fname, (seps,conts)) in zip(fnames,contrasts)
-        Makie.lines!(
+        Makie.scatterlines!(
             ax,
             seps,
             conts,
             label=fname
         )
+        maxsep = max(maxsep, maximum(seps))
     end
-    Makie.Legend(fig[1,2], ax, position=:rt, fontsize=8)
-    Makie.save(outfname_img, fig)
+    Makie.xlims!(ax, 0, maxsep*1.02)
+    ax2 = Makie.Axis(
+        fig[1,1],
+        xaxisposition = :top,
+        # yaxisposition = :right,
+        xlabel="separation [mas]",
+        ylabel="1σ contrast",
+        yscale=log10,
+        xgridvisible=false,
+        yminorticksvisible=true,
+        yminorticks=Makie.IntervalsBetween(9),
+        yticks=10.0 .^ (-10:10),
+        xminorticks=Makie.IntervalsBetween(10),
+        xminorticksvisible=true,
+        ygridvisible=true,
+        yminorgridvisible=true,
+    )
+    Makie.linkyaxes!(ax, ax2)
+    Makie.xlims!(ax2, 0, maxsep*platescale)
+    if length(fnames) > 1
+        Makie.Legend(fig[2,1], ax, position=:rt, fontsize=8, tellheight=true, tellwidth=false)
+    end
     fig
+end
+
+
+
+#= 
+Contrast Map calculation
+At each pixel mask out a circular region and compute contrast as normal.
+The result is a map.
+=#
+function contrastmap(img::AstroImageMat; step=4, maskr=15)
+    rs = imgsep(img)
+    θs = imgang(img)
+    xs = Matrix{Float64}(rs .* cos.(θs))
+    ys = Matrix{Float64}(rs .* sin.(θs))
+
+    mask = falses(size(img))
+    mask_finite = isfinite.(img)
+    out = similar(img)
+    fill!(out, NaN)
+
+    if all(!isfinite, mask_finite)
+        @error "all non-finite image"
+        return out
+    end
+    # i = 0
+    # l = count(mask_finite)
+    # Threads.@threads 
+    for I in CartesianIndices(img)[mask_finite]#[begin:100:end]
+        # i += 1
+        xi, yi = I[1], I[2]
+        x = xs[I]
+        y = ys[I]
+        sep = rs[xi,yi]
+        mask .= mask_finite
+        mask[mask] .&=  @views (
+            sep-step/2 .<= rs[mask] .<= sep+step/2
+        ) 
+        if count(mask) == 0
+            continue
+        end
+        mask[mask] .&= @views sqrt.((xs[mask] .- x).^2 + (ys[mask] .- y).^2) .> maskr
+        # display(imview(mask))
+        if count(mask) == 0
+            continue
+        end
+        # reject 5% of outlying pixels when calculating
+        trimmed = StatsBase.trim(view(img, mask), prop=0.05)
+        out[I] = std(trimmed)
+    end
+    
+    return out
+end
+
+function contrastmap(pattern::AbstractString; force=false, step=4)
+    fnames = Glob.glob(pattern)
+    return contrastmap(fnames; force, step)
+end
+function contrastmap(fnames::AbstractVector{<:AbstractString}; force=false, step=4)
+    contrasts = []
+    for fname in fnames
+        # Calculate contrast if not there, or load
+        outfname = replace(fname, ".fits"=>".contrast.fits")
+        # TODO: check itime
+        if !force && isfile(outfname) && Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
+            push!(contrasts, load(outfname))
+            continue
+        end
+        img = load(fname)
+        cont = contrastmap(img; step)
+        AstroImages.write(outfname, cont)
+        push!(contrasts, cont)
+        println(outfname)
+    end
+    return identity.(contrasts) # promote container type
 end

@@ -22,11 +22,11 @@ function rotnorthrefs(
     fnames = Glob.glob(pattern)
     fnames_refs = Glob.glob(refpattern)
 
-    if !save
-        refs_out = AstroImageMat[]
-    end
+    l = ReentrantLock()
+    refs_out = AstroImageMat[]
+    refs_out_fnames = String[]
 
-    # TODO: I would like to find a way to parallelize this.
+    # TODO: would be nice if these results still came out in order.
     for fname in fnames
         # Rotate north or get filename if already done.
         # rotnorthfname = only(rotnorth(fname))
@@ -34,14 +34,15 @@ function rotnorthrefs(
         rotnorthfname = only(fs)
         targ = load(rotnorthfname)
         refdir = replace(rotnorthfname, ".fits.gz"=>".refs")
-        if !isdir(refdir)
+        if save && !isdir(refdir)
             mkdir(refdir)
         end
-        for fname_ref in fnames_refs
+        Threads.@threads :dynamic for fname_ref in fnames_refs
             outfname = joinpath(refdir, splitpath(fname_ref)[end])
             if !force && isfile(outfname) && Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
-                if !save
+                @lock l begin
                     push!(refs_out, load(outfname))
+                    push!(refs_out_fnames, outfname)
                 end
                 continue
             end
@@ -78,14 +79,15 @@ function rotnorthrefs(
             if save
                 AstroImages.writefits(outfname, applied)
                 println(outfname, "\t rot ref ", rot_deg)
-            else
+            # else
+                # println(outfname, "\t rot ref ", rot_deg, " (no save)")
+            end
+            @lock l begin
                 push!(refs_out, applied)
-                println(outfname, "\t rot ref ", rot_deg, " (no save)")
+                push!(refs_out_fnames, outfname)
             end
         end
     end
 
-    if !save
-        return refs_out
-    end
+    return refs_out[sortperm(refs_out_fnames)]
 end

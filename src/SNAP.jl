@@ -59,7 +59,8 @@ include("snropt.jl")
 include("stackframes.jl")
 include("matchedfilter.jl")
 include("snrmap.jl")
-include("fixbadpix.jl")
+include("cropframes.jl")
+include("highpassfilt.jl")
 
 const as_per_rad = 206265
 

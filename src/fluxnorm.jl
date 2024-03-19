@@ -17,15 +17,17 @@ function fluxnorm(pattern::AbstractString; ignoreinner=5)
         img = load(fname)
         x = round(Int, img["STAR-X"])
         y = round(Int, img["STAR-Y"])
-        img[imgsep(img).<ignoreinner] .= 0
         cutout = img[x-35:x+35, y-35:y+35] 
-        return cutout#mapwindow(median, cutout, (3,3))
+        return cutout
     end
 
     # Stack and treat this average as the flux target
     target = median(stack(cutouts),dims=3)[:,:]
     display(imview(target))
     target ./= maximum(target)
+
+    target[imgsep(AstroImage(target)).<ignoreinner] .= 0
+
 
     # Find the factor we need to multiply each frame by to reach the average
     c1 = map(cutouts) do img

@@ -10,17 +10,17 @@ export stackframes, stackframes_contweight
 Given a glob pattern matching one or more files, stack the files weighted by contrast.
 Function defaults to a contrast-weighted median.
 """
-function stackframes_contweight(pattern::AbstractString; force=false)
+function stackframes_contweight(pattern::AbstractString; force=false,step=4)
     fnames = Glob.glob(pattern)
     outname = replace(pattern, "*"=>"_", ".fits"=>".stackedw.fits")
-    return stackframes_contweight(median, fnames, outname; force)
+    return stackframes_contweight(median, fnames, outname; force, step)
 end
-function stackframes_contweight(method::Base.Callable, pattern::AbstractString; force=false)
+function stackframes_contweight(method::Base.Callable, pattern::AbstractString; force=false,step=4)
     fnames = Glob.glob(pattern)
     outname = replace(pattern, "*"=>"_", ".fits"=>".stackedw.fits")
-    return stackframes_contweight(method, fnames, outname; force)
+    return stackframes_contweight(method, fnames, outname; force, step)
 end
-function stackframes_contweight(method::Base.Callable, fnames::Vector{<:AbstractString}, outname::AbstractString;force=false)
+function stackframes_contweight(method::Base.Callable, fnames::Vector{<:AbstractString}, outname::AbstractString;force=false,step=4)
 
     # Check if there is any work to do
     if !force && isfile(outname) && Base.Filesystem.mtime(outname) > maximum(Base.Filesystem.mtime.(fnames))
@@ -29,18 +29,18 @@ function stackframes_contweight(method::Base.Callable, fnames::Vector{<:Abstract
     end
     imgs = convert(Vector{AstroImage}, load.(fnames))
 
-    contrasts = contrast(fnames; force)
+    contrasts = contrast(fnames; force, step)
 
-    return stackframes_contweight(method, imgs, contrasts, outname; force)
+    return stackframes_contweight(method, imgs, contrasts, outname)
 end
-function stackframes_contweight(method, imgs::Vector{<:AstroImage}, contrasts::Vector, outname::AbstractString; force=false)
+function stackframes_contweight(method, imgs::Vector{<:AstroImage}, contrasts::Vector, outname::AbstractString)
     # Could think about ways to do this with OnlineStats so we can do rolling
     # medians, means in constant time with new frames
 
     contrast_interpolators = map(contrasts) do (sep,cont)
         return Interpolations.linear_interpolation(
-            sep, cont,
-            extrapolation_bc=convert(eltype(cont), NaN)
+            sep, log.(cont),
+            extrapolation_bc=Line()#convert(eltype(cont), NaN)
         )
     end
 
@@ -63,8 +63,7 @@ function stackframes_contweight(method, imgs::Vector{<:AstroImage}, contrasts::V
                 continue
             end
             for I3 in axes(cube,3)
-                conts[I3] = 1 / contrast_interpolators[I3](img_seps[I3][I1,I2])^2
-                # conts[I3] = contrast_interpolators[I3](img_seps[I3][I1,I2])
+                conts[I3] = 1 / exp(contrast_interpolators[I3](img_seps[I3][I1,I2]))^2
             end
             mask_cont .= isfinite.(conts)
             # If all data has non-finite contrast, weight equally instead of ignoring.

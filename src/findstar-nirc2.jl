@@ -61,7 +61,7 @@ function findstar_nirc2(
 
         # The cross correlation does not work if there are missing data
         prepared[(!isfinite).(prepared)] .= 0
-        prepared = mapwindow(median,prepared,(3,3))
+        prepared = mapwindow(median,prepared,(5,5))
         prepared.=abs.(prepared)
         # display(imview(prepared))
 

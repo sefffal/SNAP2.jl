@@ -30,7 +30,6 @@ function matchedfilt(
             extrapolation_bc=Line()
         )
 
-        @info "filtering "
         matchedfilt!(out, img, regions_S, models, contrast_interpolator)
 
         push!(out, History, "$(Date(Dates.now())): Applied matched-filter.")
@@ -47,26 +46,23 @@ function matchedfilt!(
     models::AbstractArray,
     contrast_interpolator
 )
-    # TODO: do we need to do the filtering across multiple images at once? Or do we just add them together afterwards?
-
-    # TODO: need to get the contrast curve too for noise-weighting.
-
-    # Determine centre location of the PSF model.
-    # TODO: better to store this as a header or something during subtraction and then just read it back here.
-
-
     rs = imgsep(img)
     θs = imgang(img)
     xc = mean(axes(img,1))
     yc = mean(axes(img,2))
 
+    model_interpolators = map(axes(models,3)) do model_i
+        m = models[:,:,model_i]
+        m[.!isfinite.(m)] .= 0
+        Interpolations.linear_interpolation(
+            (axes(models,1), axes(models,2)),
+            m,
+            extrapolation_bc=0
+        )
+    end
 
-    # @warn "debug workaround bad pixels"
-    # m = .!isfinite.(img)
-    # img[begin:651,begin:651] .= 0
-    # img[m] .= NaN
-
-    # Location of model centre for each region
+    # Determine centre location of the PSF model in each region
+    # TODO: better to store this as a header or something during subtraction and then just read it back here.
     region_θs = Float64[]
     region_rs = Float64[]
     for region_S in regions_S
@@ -76,81 +72,83 @@ function matchedfilt!(
         push!(region_rs, inject_planet_sep_ave)
     end
 
+    # We now do the convolution. Our kernel varies as a function of position, so we have to do 
+    # this ourselves naively looping over all pixels.
+
     # Go through each output pixel of the image (pixel != NaN)
+    # I_out is the location of the pixel we will output in this iteration of the loop.
     Threads.@threads  for I_out in findall(isfinite, img) # Returns CartesianIndices
-        # Total value of kernel, for normalization.
+
+        # Total value of kernel and size of kernel for normalization.
         ktot = 0.0
         kernsize = 0
         out[I_out] = 0
-        # Imagine, for this output pixel location, that we have a PSF model centred here.
+
+        # Consider that for this output pixel location, we have a PSF model centred here.
         # We then go over all pixels and add up how much they agree with that PSF model.
+        output_pixel_r = rs[I_out]
+        output_pixel_θ = θs[I_out]
 
-        # The tricky parts are 1) handling rotation and separation of the model vs this location.
-        # [we could just store coefficients and re-calculate here?] and 2) handling how the regions
-        # split things up, as they all have different models.
-        
-        # This gives the coordinates into the models for a model centred on this output pixel,
-        # accounting for the model's original position.
-        r_model_wantcent = rs[I_out] #region_rs[i_model] + rs[I_out]
-        θ_model_wantcent = θs[I_out] #region_θs[i_model] + θs[I_out]
+        # output_pixel_r = 40.6
+        # output_pixel_θ = deg2rad(42)
 
 
-        # For handling region seams each with different models: we have to select the right model
-        # based on the input pixel we are currently examining.
+
+        # Loop through *all* finite pixels in the input image to consider their contribution
+        # to a hypothetical planet at this output location.
         for I_in in findall(isfinite, img)
-            this_r = rs[I_in]
-            this_θ = θs[I_in]
-            # Select correct model.
+            # Location of this input pixel
+            input_pixel_r = rs[I_in]
+            input_pixel_θ = θs[I_in]
+
+            # Different input pixels also have different forward models (each subtraction region
+            # has its own model). We loop through the different pairs of (region, model) to select the
+            # correct one.
+            # Assumption: the subtraction regions do not overlap.
             the_i_model = nothing
-            # At this input pixel, there is exactly one matching model. Find it.
             for i_model in axes(models,3)
                 if regions_S[i_model][I_in] > 0
                     the_i_model = i_model
                     break
                 end
             end
+            # If no input model for this pixel, warn and continue.
+            # Something probably went wrong since we intend to always output a model
             if isnothing(the_i_model) 
+                @warn "no matching PSF model for this input pixel (maxlog=1)" I_in maxlog=1
                 continue
             end
-            r_model_wascent = region_rs[the_i_model]
-            θ_model_wascent = region_θs[the_i_model]
 
-            # x = (r_model_wantcent)*cos(θ_model_cent+δθ)
-            # y = (r_model_cent+δr)*sin(θ_model_cent+δθ)
-            # @show r_model_cent rs[I_out] rs[I_in] region_rs[the_i_model] 
+            # This is the location of the centre of the planet model for this region.
+            model_cent_r = region_rs[the_i_model]
+            model_cent_θ = region_θs[the_i_model]
+
+            # Now we have to interpolate into the correct location of the model.
+            # Consider 1st how we have to translate the model to our desired centration on the output 
+            # pixel:
+            # If we are looking at output_pixel_r + Δ, we need to instead index into `model_cent_r + Δ`
+            # where Δ is our displacement between input and output pixels (positive as input_pixel_r > output_pixel_r).
+            Δ_r = output_pixel_r - input_pixel_r
+            Δ_θ = output_pixel_θ - input_pixel_θ
+
+            x = xc + (model_cent_r + Δ_r) * cos(model_cent_θ + Δ_θ)
+            y = yc + (model_cent_r + Δ_r) * sin(model_cent_θ + Δ_θ)
 
 
-            # Need to look into model at (was cent) + our offset, which is (this_ - wantcent)
-            # Add our displacement vs where we centred the model to the original location
-            x = round(Int, xc + (r_model_wascent + this_r - r_model_wantcent)*cos(θ_model_wascent + this_θ - θ_model_wantcent))
-            y = round(Int, yc + (r_model_wascent + this_r - r_model_wantcent)*sin(θ_model_wascent + this_θ - θ_model_wantcent))
-            # x = round(Int, xc + (r_model_wascent - this_r + r_model_wantcent)*cos(θ_model_wascent - this_θ + θ_model_wantcent))
-            # y = round(Int, yc + (r_model_wascent - this_r + r_model_wantcent)*sin(θ_model_wascent - this_θ + θ_model_wantcent))
 
-            # This gives x and y, but not the actual indices. For that we'll need to add the centre index of the image.
-
-            
             # Note: it might be more efficient to invert these loops?
-            # if regions_S[the_i_model][x,y]>0 && 
-            model_at_I_in = nothing
-            if isfinite(models[x,y,the_i_model])
-                # TODO: we will have to shift the model around here.
-                # model_at_I_in = models[I_in,the_i_model]
-                model_at_I_in = models[x,y,the_i_model] # TODO: interpolate
-            end
-            if isnothing(model_at_I_in) 
+            model_at_I_in = model_interpolators[the_i_model](x,y)
+            if model_at_I_in == 0.0 # Exactly zero
                 continue
             end
-            noise = contrast_interpolator(this_r)
+            noise = contrast_interpolator(input_pixel_r)
             if !isfinite(noise)
                 @warn "non finite contrast where finite was expected" maxlog=1
             end
             if noise <= 0
                 @warn "zero valued or negative contrast will lead to bad matched filter output" maxlog=1
             end
-            # TODO: need noise here form contrast curve
             model_at_I_in /= noise^2
-            # model_at_I_in /= noise
             out[I_out] += img[I_in]*model_at_I_in
             ktot += model_at_I_in^2
             kernsize += 1

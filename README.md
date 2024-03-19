@@ -71,8 +71,8 @@ seq2gif("cal/myseqname.*.cal.fits.gz", crop=100)
 
 4. Run background subtraction. 
 ```julia
-bgsub("./myseqname.toml",)
-seq2gif("cal/myseqname.*.cal.bgub.fits.gz", clims=Percent(95)) # Optional: generate a cropped movie.
+bgsub("./myseqname.toml","cal/myseqname.*.cal.fits.gz")
+seq2gif("cal/myseqname.*.cal.bgsub.fits.gz", clims=Percent(95)) # Optional: generate a cropped movie.
 ```
 
 5. Registration. Re-align the images so that the star is centred in all frames. Uses a template PSF and cross-correlation. If you are registering a coronagraphic sequence, the template can have the middle removed so that it only searches the surrounding speckle pattern.
@@ -134,7 +134,7 @@ loci2_all(
     N_SVD=[5,15,30,60,0]
 )
 # Optional: generate a movie
-seq2gif("cal/myseqname.*.cal.bgub.reg.fluxnorm.loci.fits.gz")
+seq2gif("cal/myseqname.*.cal.bgsub.reg.fluxnorm.loci.fits.gz")
 ```
 
 3. Rotate subtracted images North-up and stack.

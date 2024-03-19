@@ -73,7 +73,7 @@ function prepregions(
             push!(O_masks, UInt8.(O_mask))
 
             M_mask = (
-                annuli_starts[i_radius] .- opt_thick_px .< rs .<= annuli_stops[i_radius] .+ opt_thick_px
+                annuli_starts[i_radius] .- sub_thick_px .< rs .<= annuli_stops[i_radius] .+ sub_thick_px
             )
             push!(M_masks, UInt8.(M_mask))
 

@@ -15,11 +15,24 @@ function crop_A_to_B(A, B)
     xr_B = xr_B .- mean(xr_B)
     yr_B = yr_B .- mean(yr_B)
 
+    # Handle odd dimensions
+    if isodd(size(B,1))
+        xr_A = xr_A .+ 0.5
+    end
+    if isodd(size(B,2))
+        yr_A = yr_A .+ 0.5
+    end
+
     m1 = xr_B[begin] .<= xr_A .<= xr_B[end]
     m2 = yr_B[begin] .<= yr_A .<= yr_B[end]
     m1 = findfirst(m1):findlast(m1)
     m2 = findfirst(m2):findlast(m2)
     A_crop = copyheader(A, A[m1,m2])
+
+    if size(A_crop) != size(B)
+        @warn "sizes do not match after croping" size(A_crop) size(B)
+    end
+
     return A_crop
 end
 export crop_A_to_B

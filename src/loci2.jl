@@ -5,6 +5,30 @@ using PSFModels: PSFModels
 
 export loci2_region, loci2_region!, loci2_frame, loci2_all
 
+#=
+
+PSF Modelling
+
+We want to replace the synthetic PSF with the real unsaturated PSF template---or at least a more
+realistic synthetic one that has asymetries.
+
+Since LOCI is normally done in the speckle-aligned rotation frame, this is kind of easy here.
+But in theory someone could apply LOCI to a dataset that has already been rotated.
+This also is needed to generalize to multi-targ SNROpt where the speckles have rotated.
+
+So we need to figure out if we should rotate the template. How can we do this?
+
+ANGLE_MEAN gives the rotation we applied or need to apply to put the planets North up.
+What about putting planets.
+
+Taken to the max: what if we just create a PSF template for every file..?
+We could apply all the same transformations to it; we could see what's happening.
+We already have a model PSF per region coming *OUT* of SNRopt.
+What if we put a model PSF per region going *IN* to subtractions?
+
+
+=#
+
 function loci2_region(fname, refnames_pattern::AbstractString, rotthreshpx, region_S, region_O; kwargs...)
     target = load(fname)
     outfname = replace(fname, ".fits"=>".loci.fits")
@@ -118,14 +142,14 @@ function loci2_region!(
             refs_S[:,i] .= refcube[region_S,j]
         end
         valid = vec(all(isfinite,refs_O,dims=2)) .& isfinite.(targ_O)
-        if count(valid) == 0
+        if count(valid) <= 0
             continue
         end
         # Reject pixels that are strongly deviated from the clipped standard deviation.
         clip_std = std(StatsBase.trim(vec(view(refs_O,valid,:)); prop=0.05)) # Find std, while ignoring 5% most deviated pixels
         valid .&= all((-5clip_std .< refs_O .< 5clip_std) .& (-5clip_std .< targ_O .< 5clip_std),dims=2) 
     
-        if count(valid) == 0
+        if count(valid) <= 0
             continue
         end
 
@@ -157,8 +181,18 @@ function loci2_region!(
         # out[region_S] .= targ_M
         # return out, outs
 
+        if any(!isfinite, refs_O[valid,:])
+            error("invalid condition: non finite pixels in masked optimization region")
+        end
+
+        local U,s,V
         if maximum(N_SVD) > 0
-            U, s, V = tsvd(Float32.(refs_O[valid,:]), min(maximum(N_SVD), size(refs_O,2)))
+            try
+                U, s, V = tsvd(Float32.(refs_O[valid,:]), min(maximum(N_SVD), size(refs_O,2)))
+            catch err
+                @error "Issue during truncated SVD (TSVD.jl)" exception=(err, catch_backtrace())
+                return
+            end
         end
 
         for n_SVD in N_SVD
@@ -270,6 +304,13 @@ end
 function loci2_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=false, kwargs...)
     fnames = glob(fnames_pattern)
     imgs = load.(fnames)
+    if length(unique(size.(imgs))) > 1
+        @error "Mismatched image dimensions"
+        for (fname, img) in zip(fnames, imgs)
+            println(fname, "\t", size(img)) 
+        end
+        error()
+    end
     refcube=stack(imgs)
     i = 0
     for (fname, targ) in zip(fnames, imgs)
