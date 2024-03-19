@@ -71,7 +71,7 @@ function interpbadpixels!(img::AstroImage)
         y2 = y + 1
         # Catch bounds errors and ignore
         if !(x1 ∈ axes(img,1) && x2 ∈ axes(img,1) &&
-             y1 ∈ axes(img,2) && y2 ∈ axes(img,1))
+             y1 ∈ axes(img,2) && y2 ∈ axes(img,2))
              continue
         end
         if !isfinite(img[I])
