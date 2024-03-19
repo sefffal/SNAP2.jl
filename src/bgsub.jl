@@ -23,7 +23,7 @@ It finds the star and then masks it, and then re-performs calibration from raws
 including a better BG sub (due to the masking) and supports chopping BG sub (auto-
 detected if star has moved a lot during the sequence).
 """
-function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=false)
+function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, savedata=true, showplots=true, force=false)
     println(SNAP.banner()*"\n\nBGSUB")
    
     # Read the configuration
@@ -58,7 +58,7 @@ function bgsub(conf_fname; verbose=true, savedata=true, showplots=true, force=fa
     skys = load("$caldir.sky.fits.gz", :)
     # bpm = load("$caldir.bpm.fits.gz")
 
-    fnames_0 = Glob.glob("$caldir.*.cal.fits.gz")
+    fnames_0 = Glob.glob(pattern)
     @info "Loading lights"
     cals = AstroImageMat[]
     outfnames = String[]
