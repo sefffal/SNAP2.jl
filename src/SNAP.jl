@@ -61,6 +61,7 @@ include("matchedfilter.jl")
 include("snrmap.jl")
 include("cropframes.jl")
 include("highpassfilt.jl")
+include("binframes.jl")
 
 const as_per_rad = 206265
 
