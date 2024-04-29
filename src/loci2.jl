@@ -93,7 +93,12 @@ function loci2_region!(
     targ_O = target[region_O]
 
    
-    clip_std = std(StatsBase.trim(vec(target[region_S]); prop=0.05)) # Find std, while ignoring 10% most deviated pixels
+    pixels = collect(StatsBase.trim(vec(target[region_S]); prop=0.05))
+    if length(pixels) <= 0
+        @warn "clipped all pixels"
+        return
+    end
+    clip_std = std(pixels) # Find std, while ignoring 10% most deviated pixels
     region_S_valid = all(
         (-4clip_std .< target[region_S] .< 4clip_std),
         dims=2
@@ -251,7 +256,11 @@ function loci2_region!(
             processed_S ./= throughput
 
 
-            clip_std = std(StatsBase.trim(vec(processed_S); prop=0.05)) # Find std, while ignoring 10% most deviated pixels
+            pixels = collect(StatsBase.trim(vec(processed_S); prop=0.05))
+            if length(pixels) <= 0
+                continue
+            end
+            clip_std = std(pixels) # Find std, while ignoring 10% most deviated pixels
             region_S_valid = all(
                 (-4clip_std .< processed_S .< 4clip_std),
                 dims=2
