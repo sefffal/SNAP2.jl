@@ -11,7 +11,7 @@ using OffsetArrays: OffsetArrays
 using ImageTransformations: ImageTransformations
 using ProgressLogging
 using AstroImages
-
+using TOML
 export bgsub
 
 """
@@ -23,7 +23,7 @@ It finds the star and then masks it, and then re-performs calibration from raws
 including a better BG sub (due to the masking) and supports chopping BG sub (auto-
 detected if star has moved a lot during the sequence).
 """
-function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, savedata=true, showplots=true, force=false)
+function bgsub(conf_fname, pattern=nothing, skypattern=nothing; verbose=true, savedata=true, showplots=true, force=false)
     println(SNAP.banner()*"\n\nBGSUB")
    
     # Read the configuration
@@ -45,6 +45,13 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
         savedata && mkpath(joinpath(profdir,"cal"))
     end
 
+    if isnothing(pattern) 
+        pattern="$caldir.*.cal.fits.gz"
+    end
+    if isnothing(skypattern) 
+        skypattern="$caldir.sky.fits.gz"
+    end
+
     # How far apart do they have to be in order to be included as a ref?
     sky_psf_radius_px = get(conf["calibrate"], "sky_psf_radius_px", 75.0)
     # How far out should we mask? (often the same, but sometimes larger.)
@@ -55,7 +62,7 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
     # darkpsf = load("$caldir.darkpsf.fits.gz")
     # skypsf = load("$caldir.skypsf.fits.gz")
     # flat = load("$caldir.flat.fits.gz")
-    skys = load("$caldir.sky.fits.gz", :)
+    skys = load(skypattern, :)
     # bpm = load("$caldir.bpm.fits.gz")
 
     fnames_0 = Glob.glob(pattern)
@@ -63,7 +70,7 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
     cals = AstroImageMat[]
     outfnames = String[]
     for fname in fnames_0
-        outfname = replace(fname, ".fits"=>".bgsub.fits",)
+        outfname = replace(fname, ".fits"=>".bgsub2.fits",)
         # Load all images if chopping. Otherwise only load if changed (and not forced)
         if get(conf["calibrate"], "chopped", true) || 
             force ||
@@ -82,18 +89,17 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
     cals_masked = Any[nothing for _ in cals]
     Threads.@threads :dynamic for i in eachindex(cals)
         cal = cals[i]
-        # checknansdebug(cal,fname)
         calmasked = deepcopy(cal)
         xs = axes(calmasked,1) .- calmasked["STAR-X"]
         ys = axes(calmasked,2) .- calmasked["STAR-Y"]
         rs = @. sqrt(xs^2 + ys'^2)
         calmasked[rs .<= psf_mask_radius] .= NaN
-        cals_masked[i] = mapwindow(median, calmasked, (3,3))
+        cals_masked[i] = copyheader(cal, mapwindow(median, calmasked, (3,3)))
     end
 
     # remove bad pixels using a median filter
     skys = map(skys) do sky
-        mapwindow(median, sky[:,:], (3,3))
+        copyheader(sky,mapwindow(median, sky[:,:], (3,3)))
     end
 
     # We need to subract off the median values of all images for the least squares to work well.
@@ -107,42 +113,61 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
     cals_masked = broadcast(cals_masked, meds) do img, med
         img .- med
     end
+
     # Do same for sky images
     meds = map(skys) do sky
         median(filter(isfinite, sky))
     end
-    skys = broadcast(skys, meds) do img, med
-        checknansdebug(img)
-        (img .- med)[:,:]
+    skys = broadcast(skys, meds) do sky, med
+        copyheader(sky, (sky .- med)[:,:])
     end
-
 
     if savedata && get(conf["calibrate"], "write_calmasked", false)
         @progress "Writing" for (i,frame) in enumerate(cals_masked)
             AstroImages.writefits(@sprintf("%s.%04d.3.cal.masked.fits.gz", caldir, i),frame)
         end
     end
-    # gif_fname = "$caldir.anim.3.rawmasked4sky.gif"
-    # @ANIMATE
-    # frames = stack(raws_masked[begin:4:end,begin:4:end])
-    # save(gif_fname, imview(frames), fps=10)
-
-
     sky_N_most_similar = get(conf["calibrate"], "sky_N_most_similar", typemax(Int))
-    
 
-    star_x_y = map(cals) do cal
-        cal["STAR-X"], cal["STAR-Y"]
-    end
 
     
     @info "Calibrating raw images (sky and/or choppping)"
     savers = []
+    # Threads.@threads :dynamic for i in eachindex(cals)
     Threads.@threads :dynamic for i in eachindex(cals)
         outfname = outfnames[i]
         A = cals[i]
+        if !occursin("267",outfname)
+            continue
+        end
+        if occursin("NIRC2", get(header(cals[i]), "CURRINST", "")) && cals[i]["WAVE"] > 3.0e-6
+            @info "Preparing extra sky BG refs to account for K-mirror position"
+            use_skys = [
+                skys;
+                [
+                    prepare_nirc2_kmirror_rotated_bgrefs(A, sky)
+                    for sky in skys
+                    if haskey(sky, "ROTPPOSN")
+                ]
+            ]
+        else
+            use_skys = skys
+        end
 
         if get(conf["calibrate"], "chopped", true)
+            
+            if occursin("NIRC2", get(header(cals[i]), "CURRINST", "")) && cals[i]["WAVE"] > 3.0e-6
+                @info "Preparing extra chopped BG refs to account for K-mirror position"
+                use_cals = [cals; prepare_nirc2_kmirror_rotated_bgrefs.(Ref(A), cals)]
+                use_cals_masked = [cals_masked; prepare_nirc2_kmirror_rotated_bgrefs.(Ref(A), cals_masked)]
+            else
+                use_cals = cals
+                use_cals_masked = cals_masked
+            end
+
+            star_x_y = map(use_cals) do cal
+                cal["STAR-X"], cal["STAR-Y"]
+            end
 
             # Determine which frames are far enough away to use as a BG reference
             this_pos = star_x_y[i]
@@ -151,12 +176,12 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
             # These are the frames we will be allowed to use as bg references
             ii_allowed = findall(distances .>= sky_psf_radius_px)
             # Both regular sky frames and light frames that are far enough away to be used as sky backgrounds (chopping)
-            chop_skys = vcat(cals[ii_allowed], skys)
-            masked_chop_skys = vcat(cals_masked[ii_allowed], skys)
+            chop_skys = vcat(use_cals[ii_allowed], use_skys)
+            masked_chop_skys = vcat(use_cals_masked[ii_allowed], use_skys)
         else
             # No chopping, just do least squares fit to BG
-            chop_skys = skys
-            masked_chop_skys = skys
+            chop_skys = use_skys
+            masked_chop_skys = use_skys
         end
         # Rank by correlation
         correlation_vector = map(masked_chop_skys) do B
@@ -178,7 +203,9 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
 
         # Perform the calibration
         skycube = stack(chop_skys[II])
+        skycube[.!isfinite.(skycube)] .= 0
         skycubemasked = stack(masked_chop_skys[II])
+        skycubemasked[.!isfinite.(skycubemasked)] .= 0
 
 
         ## least squares subtraction of sky background
@@ -210,11 +237,14 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
             # cal_masked_restrict = cals_masked[i]
             skycubemasked_restrict = AstroImages.restrict(skycubemasked[tilemask...,:],(1,2))
             cal_masked_restrict = AstroImages.restrict(cals_masked[i][tilemask...],(1,2))
+            
+            skycubemasked_restrict[.!isfinite.(skycubemasked_restrict)] .= 0
+            cal_masked_restrict[.!isfinite.(cal_masked_restrict)] .= 0
 
             finite_mask = isfinite.(cal_masked_restrict) .& all(isfinite, skycubemasked_restrict ,dims=3)[:,:]
             if count(finite_mask) == 0
                 @warn "empty tile, no bg subtraction" tilemask
-                return
+                continue
             end
 
             # Also ignore pixels outside a certain quantile range
@@ -242,18 +272,15 @@ function bgsub(conf_fname, pattern="$caldir.*.cal.fits.gz"; verbose=true, saveda
         corrected["BGTILEN"] = tile_count
 
 
-        # if !contains(outfname, "n0146")
-        # end
+        # push!(savers, (outfname, corrected))
         push!(savers, (outfname, corrected))
-        # display(imview(corrected))
-
-        # saver = @async AstroImages.writefits(@sprintf("%s.%04d.4.synthsky.fits.gz", caldir, i),newsky)
-        # push!(savers, saver)
-        println(outfname, "\t($i)")
+        # AstroImages.writefits(outfname,corrected)
+        println(outfname, "\t($i) calc")
     end
 
     for (fname, img) in savers
         AstroImages.writefits(fname,img)
+        println(fname, "\t($i) write")
     end
 
 
@@ -286,8 +313,63 @@ end
 # end
 
 
-function checknansdebug(img,fname="")
-    if any(!isfinite, img[200:end-200,200:end-200])
-        error("NANs $fname")
+
+
+    #=
+
+TODO: If inst is NIRC2 and wavelength > ~3.0 micron, then copy all refs and create rotated versions
+following Jayke's advice:
+
+
+Prepare: cals, cals_masked, and skys
+=#
+using Rotations
+"""
+Given an reference image, rotate and transform it such that it tracks the background of a given target image.
+"""
+function prepare_nirc2_kmirror_rotated_bgrefs(targ::AstroImage, ref::AstroImage)
+
+    # Rotate image keeping same axes
+    # Transform STAR-X and STAR-Y headers too.
+
+    center_dist = 13.75 # arcsec (from Jim Lyke)
+    pixel_scale = 0.009942 # arcsec/pixel narrowcam
+    pixel_radius = center_dist/pixel_scale
+    rotpposn_targ = targ["ROTPPOSN"] - 0.7 # deg
+    rotpposn_ref = ref["ROTPPOSN"] - 0.7 # deg
+
+    # This works!
+    # tform_targ = Translation((0, -pixel_radius)) ∘ LinearMap(RotMatrix(deg2rad(-rotpposn_targ/2))) #∘ 
+    # warp(
+    #     ImageFiltering.centered(targ), tform_targ, (-1750:1750, -1750:1750))#, (1:ceil(Int,pixel_radius), 1:ceil(Int,pixel_radius)))
+
+    tform_targ = 
+        CoordinateTransformations.recenter(
+            LinearMap(RotMatrix(deg2rad(-rotpposn_targ/2))),
+            (0, -pixel_radius)
+        )
+    tform_ref =  
+        CoordinateTransformations.recenter(
+            LinearMap(RotMatrix(deg2rad(-rotpposn_ref/2))),
+            (0, -pixel_radius)
+        )
+
+    match_ref_to_targ_tform = inv(tform_targ) ∘ tform_ref
+    ref_cen = ImageFiltering.centered(ref)
+    matched = copyheader(ref, collect(warp(
+        ref_cen,
+        match_ref_to_targ_tform,
+        # (-1700:1700, -1700:1700)
+        axes(ref_cen)
+        # (-1000:1000,-1000:1000)
+    ))) 
+    if haskey(ref, "STAR-X")
+        newx, newy = inv(match_ref_to_targ_tform)((
+            ref["STAR-X"]-size(ref,1)/2,
+            ref["STAR-Y"]-size(ref,2)/2
+        ))
+        matched["STAR-X"] = newx + size(ref,1)/2
+        matched["STAR-Y"] = newy + size(ref,2)/2
     end
+    return matched 
 end
