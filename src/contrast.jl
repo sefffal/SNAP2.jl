@@ -99,11 +99,11 @@ end
 function contrastplot(pattern::AbstractString; force=false, platescale=9.971, step=4)
     fnames = Glob.glob(pattern)
     outfname_img = replace(pattern, "*"=>"_", ".fits"=>".png", ".gz"=>"")
-    fig = contrastplot(fnames, outfname_img; force, platescale, step)
+    fig = contrastplot(fnames; force, platescale, step)
     Makie.save(outfname_img, fig)
     return fig
 end
-function contrastplot(fnames::AbstractArray{<:AbstractString}; force=false, platescale=9.971, step=4)
+function contrastplot(fnames::AbstractArray{<:AbstractString},; force=false, platescale=9.971, step=4)
     contrasts = contrast(fnames; force, step)
     fig = Makie.Figure(
         size= length(fnames) > 1 ? (700,800) : (700,600)
