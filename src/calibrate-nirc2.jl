@@ -239,7 +239,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
             psf_data[I] = mean(pixels)
         end
     end
-    psf = copyheader(first(transformed_psfs), psf_data)
+    psf = AstroImage(psf_data)
     showplots && display(imview(psf))
 
     psf["STAR-X"] = mean(axes(psf,1))
