@@ -1,3 +1,26 @@
+using AstroLib
+
+export header_normalize, header_normalize!
+function header_normalize(
+    pattern::AbstractString,
+)
+    fnames = Glob.glob(pattern)
+    header_normalize(fnames)
+end
+
+
+function header_normalize(
+    fnames::AbstractArray{<:AbstractString},
+)
+    for fname in fnames
+        img = load(fname)
+        outfname = replace(fname, ".fits"=>".headernorm.fits")
+        header_normalize!(img)
+        save(outfname, img)
+        println(outfname, "\t headernorm ")
+    end
+end
+
 
 function header_normalize!(
     img::AstroImage,
@@ -23,7 +46,11 @@ function header_normalize!(
 
     # Sometimes keys are wrapped in strings, and sometimes not.
     # This will work with either.
-    tryparseconvert(str::String) = parse(Float64, str)
+    tryparseconvert(str::String) = if contains(str, ':')
+        ten(str)
+    else
+        parse(Float64, str)
+    end
     tryparseconvert(flt::Float64) = flt
     tryparseconvert(num::Number) = convert(Float64, num)
 
