@@ -17,10 +17,18 @@ export rotnorth, rotrestore
 function rotnorth(
     pattern::AbstractString,
     offset=[0,0];
+    kwargs...
+)
+    fnames = Glob.glob(pattern)
+    return rotnorth(fnames, offset; kwargs...)
+end
+
+function rotnorth(
+    fnames::AbstractArray{<:AbstractString},
+    offset=[0,0];
     force=false,
     invert=false
 )
-    fnames = Glob.glob(pattern)
     outfnames = String[]
     for fname in fnames
         if invert
