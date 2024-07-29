@@ -9,9 +9,14 @@ using CairoMakie: Makie
 
 export fluxnorm
 
-function fluxnorm(pattern::AbstractString; ignoreinner=5)
+function fluxnorm(pattern::AbstractString; kw...)
     fnames = Glob.glob(pattern)
+    plotoutfname = replace(pattern, "*"=>"_",".fits"=>"flux.png", ".gz"=>"")
+    return fluxnorm(fnames, plotoutfname; kw...)
+end
     
+function fluxnorm(fnames::AbstractArray{<:AbstractString}, plotoutfname::AbstractString; ignoreinner=5)
+        
     # Load small cutouts around the star
     cutouts = map(fnames) do fname
         img = load(fname)
@@ -42,10 +47,18 @@ function fluxnorm(pattern::AbstractString; ignoreinner=5)
     c2 = map(cutouts) do img
         vec(img) \ vec(target)
     end
+
+    if any(!isfinite, c1) || any(!isfinite, c1)
+        c1 .= c2 .= 1/length(c1)
+    end
     
     # Now go through images, load 'em up one at a time, and multiply by both
     # factors.
     for (fname,c1,c2) in zip(fnames,c1,c2)
+        if !isfinite(c1*c2)
+            @warn "non finite coefficients" c1 c2 fname
+            c1 = c2 = 0
+        end
         img = load(fname).*c1.*c2
         push!(img, History, "$(Date(Dates.now())): Flux normalized to median of sequence.")
         img["FLUXNORM"] = c1 * c2 
@@ -63,6 +76,6 @@ function fluxnorm(pattern::AbstractString; ignoreinner=5)
             ylabel = "peak flux [counts]",
         )
     )
-    save(replace(pattern, "*"=>"_",".fits"=>"flux.png", ".gz"=>""),figaxpl)
+    save(plotoutfname,figaxpl)
     return c1 .* c2
 end
