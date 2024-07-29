@@ -7,8 +7,11 @@ using FITSIO
 
 export register
 
-function register(pattern::AbstractString, template_fname::AbstractString; force=false, cropsize=90)
+function register(pattern::AbstractString, template_fname::AbstractString; kwargs...)
     fnames = Glob.glob(pattern)
+    return register(fnames, template_fname; kwargs...)
+end
+function register(fnames::AbstractArray{<:AbstractString}, template_fname::AbstractString; force=false, cropsize=90)
     template = load(template_fname)
 
     newtemplate = template
@@ -57,7 +60,9 @@ function register(pattern::AbstractString, template_fname::AbstractString; force
     Threads.@threads :dynamic for (satimg, outfname) in collect(zip(frames,fnames_out))
         x_guess = round(Int, satimg["STAR-X"])
         y_guess = round(Int, satimg["STAR-Y"])
-        c = satimg[x_guess-cropsize:x_guess+cropsize,y_guess-cropsize:y_guess+cropsize]
+        c = satimg[
+            max(begin,x_guess-cropsize):min(end, x_guess+cropsize),
+            max(begin,y_guess-cropsize):min(end,y_guess+cropsize)]
 
         # x = axes(c,1)
         # y = axes(c,1)
