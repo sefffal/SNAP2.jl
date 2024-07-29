@@ -7,12 +7,18 @@ export seq2gif
 
 function seq2gif(
     pattern::AbstractString,
+    outname=replace(pattern, "*"=>"_", ".fits"=>".mp4",".gz"=>""); kwargs...
+    )
+    fnames = Glob.glob(pattern)
+    return seq2gif(fnames, outname; kwargs...)
+end
+function seq2gif(
+    fnames::AbstractArray{<:AbstractString},
     outname=replace(pattern, "*"=>"_", ".fits"=>".mp4",".gz"=>"");
     clims=Percent(99.5),
     crop=nothing,
     clims_per_frame=false
     )
-    fnames = Glob.glob(pattern)
     @info "loading frames"
     if isnothing(crop)
         imgs = stack(load.(fnames))
@@ -64,4 +70,6 @@ function seq2gif(
             frame[] = Makie.rotr90(imview(@view imgs[:,:,i];clims))
         end
     end
+    println(outname)
+    return outname
 end
