@@ -152,3 +152,128 @@ function filetable(conf_fname::AbstractString; verbose=true, save=true, showplot
     return table
 end
 
+
+
+
+
+"""
+    filetable("sequence/profile.toml", save=true, verbose=true)
+
+This prints out a listing of the fits files in the `raw` directory
+of the config file in a nice table format.
+
+You can use it to identify the right frames, and just copy them
+right into the .toml config file under the right section.
+
+If `save=true`, then write the file table to a text file to 
+`sequence/cal/profile.filelisting.txt`. If `verbose=true`, then
+print it to the screen (both can be true).
+
+Returns: nothing.
+"""
+
+function filetable2(dirpath::AbstractString; verbose=true, save=true, showplots=false)
+
+
+    dirpath = abspath(dirpath)
+    fnames = [
+        glob("*.fits*", dirpath);
+        glob(".*/*.fits*", dirpath);
+        glob("sci/*.fits*",dirpath);
+        glob("cal/*.fits*",dirpath);
+    ]
+    verbose && @info("Found $(length(fnames)) fits files")
+    
+    return filetable2(fnames, joinpath(dirpath,"cal"); verbose, save, showplots)
+    
+end
+
+function filetable2(fnames::AbstractArray{<:AbstractString}, caldir; verbose=true, save=true, showplots=false)
+    if save
+        outfile = open("$caldir.filelisting.txt", "w")
+        verbose && @info("Writing listing to $caldir.filelisting.txt")
+    end
+
+    table = (;
+        paths=String[],
+        date=String[],
+        dims=[],
+        totexp=[],
+        object=String[],
+        target=String[],
+        wavelength=[],
+    )
+    
+    for fname in fnames
+        try
+            headers = loadheader(fname)
+
+            # Keck NIRC2
+            itime = 0
+            if haskey(headers, "TELESCOP") &&
+                occursin("Keck", headers["TELESCOP"]) #&&
+                # occursin("NIRC2", headers["CURRINST"])
+                s = headers["NAXIS1"], headers["NAXIS2"]
+                d = headers["DATE-OBS"]
+                o = headers["OBJECT"]
+                t = headers["TARGNAME"]
+                t = headers["TARGNAME"]
+                itime = headers["ITIME"]
+                coadds = headers["COADDS"]
+                totexp = itime*coadds
+                wav = headers["CENWAVE"]
+            # Gemini South or North (after GPI 2 upgrade)
+            elseif haskey(headers, "TELESCOP") &&
+                occursin("Gemini", headers["TELESCOP"])
+
+                headers2 = loadheader(fname,2)
+
+                s = headers2["NAXIS1"], headers2["NAXIS2"]
+                d = headers["DATE-OBS"]*headers["UT"]
+                o = headers["OBJECT"]
+                t = headers["OBSTYPE"]
+                totexp = headers2["ITIME"]
+                wav = missing
+                coadds = 1
+            else
+                @error("Unrecognized instrument. Assuming DATE-OBS, OBJECT, TARGNAME, and TOTEXP are present", maxlog=1)
+                s = (
+                    haskey(headers, "NAXIS1") ? headers["NAXIS1"] : "?",
+                    haskey(headers, "NAXIS2") ? headers["NAXIS2"] : "?"
+                )
+                d = haskey(headers, "DATE-OBS") ? headers["DATE-OBS"] : "?"
+                o = haskey(headers, "OBJECT") ? headers["OBJECT"] : "?"
+                t = haskey(headers, "TARGNAME") ? headers["TARGNAME"] : "?"
+                totexp = haskey(headers, "TOTEXP") ? headers["TOTEXP"] : "?"
+                wav = missing
+                coadds = 1
+            end
+            fnames = splitpath(fname)
+            if fnames[1] == "sequences"
+                popfirst!(fnames)
+                popfirst!(fnames)
+            end
+            # Note: not using joinpath here on purpose, standardize output with forward slash.
+            fname = join(fnames, "/")
+
+            push!(table.paths, fname)
+            push!(table.date, d)
+            push!(table.dims, s)
+            push!(table.totexp, totexp)
+            push!(table.object, o)
+            push!(table.target, t)
+            push!(table.wavelength, wav)
+
+            verbose && println("\"$fname\", #\t$d\t$s\t$itime\t$coadds\t$o\t$t\t$wav")
+            save && println(outfile, "\"$fname\", #\t$d\t$s\t$itime\t$coadds\t$o\t$t\t$wav")
+        catch err
+            rethrow(err)
+            println("#", typeof(err))
+        end
+    end
+    save && close(outfile)
+
+    return table
+end
+
+export filetable2
