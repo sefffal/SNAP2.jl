@@ -201,7 +201,7 @@ function loci2_region!(
         end
 
         for n_SVD in N_SVD
-            if n_SVD > size(U, 2)
+            if maximum(N_SVD) > 0 && n_SVD > size(U, 2)
                 continue
             end
 
