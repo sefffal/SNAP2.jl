@@ -93,9 +93,9 @@ function loci2_region!(
     targ_O = target[region_O]
 
    
-    pixels = collect(StatsBase.trim(vec(target[region_S]); prop=0.05))
+    pixels = collect(StatsBase.trim(filter(isfinite, vec(target[region_S])); prop=0.05))
     if length(pixels) <= 0
-        @warn "clipped all pixels"
+        @warn "clipped all pixels" original_pixel_count=length(target[region_S]) count(isfinite, target[region_S])
         return
     end
     clip_std = std(pixels) # Find std, while ignoring 10% most deviated pixels
@@ -116,6 +116,8 @@ function loci2_region!(
     # Loop through optimizing the rejection thrreshold ratio
     init_SNR = best_SNR = 1.0 / sqrt(mean(target[region_S][region_S_valid].^2))
     println("initial\t\t\t\t\t\t: $(best_SNR)\t*")
+    enough_rotation = false
+    enough_finite_opt = false
     for rotthreshpx_val in rotthreshpx
         distances =  sep .* tan.(rem2pi.(abs.(angle .- angles), RoundDown))
         allowed = distances .> rotthreshpx_val
@@ -123,6 +125,7 @@ function loci2_region!(
         if isempty(valid_II)
             continue
         end
+        enough_rotation = true
 
         ## Given a list of frames, calculate the photometry of the planet at the mean location
         # of the target frame.
@@ -158,6 +161,7 @@ function loci2_region!(
             continue
         end
 
+        enough_finite_opt = true
         # Calculate actual models to see what the PSF looks like
         # targ_M = psf_model.(
         #     rs[region_S] .* cos.(θs[region_S]),
@@ -196,7 +200,7 @@ function loci2_region!(
                 U, s, V = tsvd(Float32.(refs_O[valid,:]), min(maximum(N_SVD), size(refs_O,2)))
             catch err
                 @error "Issue during truncated SVD (TSVD.jl)" exception=(err, catch_backtrace())
-                return
+                continue
             end
         end
 
@@ -256,9 +260,13 @@ function loci2_region!(
             processed_S ./= throughput
 
 
-            pixels = collect(StatsBase.trim(vec(processed_S); prop=0.05))
-            if length(pixels) <= 0
+            filtered = filter(isfinite, vec(processed_S))
+            if length(filtered) <= 0
                 continue
+            end
+            pixels = collect(StatsBase.trim(filtered; prop=0.05))
+            if length(pixels) <= 0
+                pixels = filter(isfinite, vec(processed_S))
             end
             clip_std = std(pixels) # Find std, while ignoring 10% most deviated pixels
             region_S_valid = all(
@@ -280,6 +288,13 @@ function loci2_region!(
             end
             println()
         end
+    end
+
+    if !enough_rotation
+        println("No LOCI allowed due to insuficient rotation")
+    end
+    if !enough_finite_opt
+        println("No LOCI performed due to insufficent remaining pixels in optimization region")
     end
 
     println("improvement = $(best_SNR/init_SNR)")
