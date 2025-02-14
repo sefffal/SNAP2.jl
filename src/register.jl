@@ -11,7 +11,7 @@ function register(pattern::AbstractString, template_fname::AbstractString; kwarg
     fnames = Glob.glob(pattern)
     return register(fnames, template_fname; kwargs...)
 end
-function register(fnames::AbstractArray{<:AbstractString}, template_fname::AbstractString; force=false, cropsize=90)
+function register(fnames::AbstractArray{<:AbstractString}, template_fname::AbstractString; force=false, cropsize=90, searchsize=cropsize)
     template = load(template_fname)
 
     newtemplate = template
@@ -111,11 +111,15 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
             startI[1],
             startI[2],
         ]
+        lower = [0, -1e300, startI[1]-searchsize, startI[2]-searchsize, ]
+        upper = [1e300, 1e300, startI[1]+searchsize, startI[2]+searchsize, ]
         # test for an example starting point
         result = optimize(
             objective,
+            lower,
+            upper,
             guess,
-            Optim.LBFGS(),
+            Optim.Fminbox(Optim.LBFGS()),
             Optim.Options(
                 show_trace=false,
                 time_limit=10.0, # Soft upper limit in seconds before returning best guess.
@@ -126,7 +130,6 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
         if !Optim.converged(result)
             @error("Centre-fit did not converge")
             display(result)
-            
         end
 
         # Now that we have found the centre of our cropped image, we can apply the full translation to
