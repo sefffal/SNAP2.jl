@@ -135,12 +135,15 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         verbose && @info "Loading additional manual bad pixel maps"
         # bpm.= 0
         bpm = stackframes(loadfiles(cal["badpix"]), sum)
+        # @show "A" size(bpm)
         med = median(filter(isfinite, bpm))
         bpm = float.(crop_A_to_B(bpm, fs1))
+        # @show "B" size(bpm)
         bpm[bpm .> med] .= NaN
     else
         SNAP.excludebadpixels!(bpm, 2.5, 2)
     end
+    bpm[collect(isfinite.(bpm))] .= 0
     if size(bpm) != size(fs1)
         @info "Cropping bpm to match first data file dimensions."
         bpm = crop_A_to_B(bpm, fs1)
@@ -149,11 +152,15 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
 
 
     ##
-    darkpsf = stackframes(fnames_dark_psf, median)[:,:]
-
-
-
     psfs     = loadfiles_lin(cal["raw_psf_path"])
+    if isempty(fnames_dark_psf)
+        darkpsf = deepcopy(first(psfs))
+        darkpsf .= 0
+    else
+        darkpsf = stackframes(fnames_dark_psf, median)[:,:]
+    end
+
+
 
     # Since dark exposure does not necessarily match the other exposures,
     # ideally we want to do dark scaling. But mostly we do not have a bias.
@@ -177,11 +184,10 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
     end
     flatmedpsf = median(filter(isfinite, skypsfraw))
     
-
-
     ###
     verbose && @info "Calibrating PSF images"
     bpm_psf = SNAP.crop_A_to_B(bpm, first(psfs))
+    @show size(darkpsf) size(psfs[1])
     calibrated_psfs = map(psfs) do psf
         dat = (psf .- darkpsf) ./
             # psf.headers["TOTEXP"]
@@ -278,14 +284,30 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
         return img
     end
 
-    length(fnames_dark_psf) == 0 && error("No matching dark_psf frames")
-    length(fnames_flaton) == 0 && error("No matching flaton frames")
-    length(fnames_flatoff) == 0 && error("No matching flatoff frames")
+    if length(fnames_dark_psf) == 0
+        @warn("No matching dark_psf frames")
+    end
+    if length(fnames_flaton) == 0
+        @warn("No matching flaton frames")
+    end
+    if length(fnames_flatoff) == 0
+        @warn("No matching flatoff frames")
+    end
 
 
 
-    flaton  = stackframes(fnames_flaton, median)[:,:]
-    flatoff = stackframes(fnames_flatoff, median)[:,:]
+    if isempty(fnames_flaton)
+        flaton = deepcopy(dark)
+        flaton .= 1
+    else
+        flaton  = stackframes(fnames_flaton, median)[:,:]
+    end
+    if isempty(fnames_flatoff)
+        flatoff = deepcopy(dark)
+        flatoff .= 0
+    else
+        flatoff  = stackframes(fnames_flatoff, median)[:,:]
+    end
 
 
     # Flat is difference between flat lamp on and off.
@@ -297,7 +319,7 @@ function calibrate_nirc2(conf_fname; verbose=true, savedata=true, showplots=true
 
     if any(==(0), flat)
         @warn "zero values present in flats! This may lead to poor results"
-        flat[flat .== 0] .= flatmed
+        flat[collect(flat .== 0)] .= flatmed
     end
 
         
