@@ -1,5 +1,4 @@
 using AstroImages
-using GIFImages
 using Glob
 using CairoMakie:Makie
 
@@ -14,8 +13,9 @@ function seq2gif(
 end
 function seq2gif(
     fnames::AbstractArray{<:AbstractString},
-    outname=replace(pattern, "*"=>"_", ".fits"=>".mp4",".gz"=>"");
+    outname;
     clims=Percent(99.5),
+    stretch=identity,
     crop=nothing,
     clims_per_frame=false
     )
@@ -37,7 +37,7 @@ function seq2gif(
     end
     @info "rendering"
     if !clims_per_frame
-        rendered = imview(imgs; clims)
+        rendered = imview(imgs; clims, stretch)
     else
         @info "calculating clims per frame"
     end
@@ -52,7 +52,7 @@ function seq2gif(
     if !clims_per_frame
         frame = Makie.Observable(Makie.rotr90(@view rendered[:,:,1]))
     else
-        frame = Makie.Observable(Makie.rotr90(imview(@view imgs[:,:,1];clims)))
+        frame = Makie.Observable(Makie.rotr90(imview(@view imgs[:,:,1];clims,stretch)))
     end
     ax = Makie.Axis(
         fig[1,1];
@@ -67,7 +67,7 @@ function seq2gif(
         if !clims_per_frame
             frame[] = Makie.rotr90(@view rendered[:,:,i])
         else
-            frame[] = Makie.rotr90(imview(@view imgs[:,:,i];clims))
+            frame[] = Makie.rotr90(imview(@view imgs[:,:,i];clims,stretch))
         end
     end
     println(outname)
