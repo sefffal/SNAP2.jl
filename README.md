@@ -52,7 +52,7 @@ add https://github.com/sefffal/Snap2.jl.git
 
 Starting with an blank `template.toml` file, run this function to print out a list of all your raw files. You can scroll through and copy-paste these entries into the right section of the `template.toml` file.
 ```julia
-filetable("myseqname.toml")
+filetable2("./some-dir-with-fits-files/")
 ```
 
 2. Run calibration
@@ -61,6 +61,8 @@ calibrate_nirc2("myseqname.toml",) # see example at the bottom of the page.
 # Optional: generate a movie
 seq2gif("cal/myseqname.*.cal.fits.gz")
 ```
+
+Note -- this is the point at which you could apply distorion correction, e.g. using rain.py
 
 3. Find the rough star position (updates headers). The arguments are "file pattern", "PSF template path", and "max star distance from centre (px)" for the search.
 ```julia
@@ -107,7 +109,7 @@ To perform LOCI PSF subtraction:
 1. Generate subtraction regions. These are typically annular segments. The defaults below produce pairs of subtraction and optimization regions, separated by a buffer zone. This prevents over-subtraction of the planet PSF. Although I do not advise it, you can use a single subtraction zone by passing the same region list as both subtraction and optimization region arguments.
 
 ```julia
-S_regions, O_regions = prepregions(
+S_regions, O_regions, M_regions = prepregions(
     "cal/myseqname.n0180.cal.bgsub.reg.fluxnorm.fits.gz",
     # Control the geometry of the subtraction and optimization regions.
     sub_inner_px=8,
@@ -115,7 +117,8 @@ S_regions, O_regions = prepregions(
     sub_thick_px=10,
     opt_inner_px=9,
     opt_thick_px=25,
-    buf_px=4
+    buf_px=4,
+    num_sectors=3
 );
 ```
 
@@ -130,9 +133,11 @@ loci2_all(
     # Full-width-at-half max of the planet PSF in pixels for SNR modelling.
     # Should be approximately 1.22 lambda/D.
     psf_fwhm=4.6,
-    # Numpber of SVD components to use. 0 means all (no SVD truncation).
+    psf_ratio=0.2, # ratio of secondary vs. primary for PSF modelling
+    # Numpber of SVD components to try using (picks best). 0 means all (no SVD truncation).
     N_SVD=[5,15,30,60,0]
 )
+
 # Optional: generate a movie
 seq2gif("cal/myseqname.*.cal.bgsub.reg.fluxnorm.loci.fits.gz")
 ```
