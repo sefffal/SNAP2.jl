@@ -4,6 +4,7 @@ uuid = "12bf50af-5435-4e3a-8788-770abc7ae5bc"
 [deps]
 AstroImages = "fe3fc30c-9b16-11e9-1c73-17dabf39f4ad"
 AstroLib = "c7932e45-9af1-51e7-9da9-f004cd3a462b"
+BlackBoxOptim = "a134a8b2-14d6-55f6-9291-3336d3ab0209"
 CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 CoordinateTransformations = "150eb455-5306-5404-9cee-2592286d6298"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -34,3 +35,6 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 TOML = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
 TSVD = "9449cd9e-2762-5aa3-a617-5413e99d722e"
+
+[compat]
+BlackBoxOptim = "0.6.3"
