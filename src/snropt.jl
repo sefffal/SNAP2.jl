@@ -269,7 +269,7 @@ function snropt_region!(
 
     # Reject pixels that are strongly deviated from the clipped standard deviation.
     clip_std = std(StatsBase.trim(vec(view(refs_O,valid,:)); prop=0.10)) # Find std, while ignoring 10% most deviated pixels
-    valid .&= all(
+    valid[valid] .&= all(
         (-4clip_std .< view(refs_O,valid,:) .< 4clip_std),
         dims=2
     ) 
@@ -372,9 +372,9 @@ function snropt_region!(
     # display(imview(fm))
     # display(imview(fm .+ region_S))
 
-    setglobal!(Main, :refcube,refcube)
+    #setglobal!(Main, :refcube,refcube)
     if length(filter(isfinite, processed_S)) == 0
-        setglobal!(Main, :processed_S,processed_S)
+        #setglobal!(Main, :processed_S,processed_S)
         @warn "no pixels in subtraction region"
         return
     end
