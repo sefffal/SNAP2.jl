@@ -62,6 +62,14 @@ function loci2_region!(
     angle = deg2rad(Float64(target["ANGLE_MEAN"])::Float64)
     angles = deg2rad.(Float64.(getindex.(refs, "ANGLE_MEAN"))::Vector{Float64})
 
+
+    refs_are_rdi = map(refs) do ref
+        if haskey(ref, "ISRDIREF") && ref["ISRDIREF"] > 0
+            return 1
+        end
+        return 0
+    end
+
     out[region_S] .= target[region_S]
 
     if count(region_S) == 0 || count(region_O) == 0
@@ -120,7 +128,7 @@ function loci2_region!(
     enough_finite_opt = false
     for rotthreshpx_val in rotthreshpx
         distances =  sep .* tan.(rem2pi.(abs.(angle .- angles), RoundDown))
-        allowed = distances .> rotthreshpx_val
+        allowed = distances .> rotthreshpx_val .|| refs_are_rdi .> 0
         valid_II = findall(allowed)
         if isempty(valid_II)
             continue
@@ -141,6 +149,9 @@ function loci2_region!(
             inject_planet_sep_ave .* cos.(ref_planet_pa),
             inject_planet_sep_ave .* sin.(ref_planet_pa),
         )
+
+        # Set photometry of model to zero for reference images
+        phot_of_ref_at_target_inject_location .*= (1 .- refs_are_rdi[valid_II])
 
         # TODO: could hoist this out and then just do views into it
         refs_O = zeros(eltype(refcube), count(region_O), length(valid_II))
@@ -339,6 +350,10 @@ function loci2_all(fnames_pattern, rotthreshpx, regions_S, regions_O; force=fals
     i = 0
     for (fname, targ) in zip(fnames, imgs)
         i+=1
+        if haskey(targ, "ISRDIREF") && targ["ISRDIREF"] > 0
+            println(fname, "\t($i) skipping reference")  
+            continue
+        end
         ii = setdiff(axes(refcube,3),i)
         refs_this = @view imgs[ii]
         refcube_this = @view refcube[:,:,ii]
