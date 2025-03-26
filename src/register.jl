@@ -78,7 +78,7 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
         # cmask = imfilter(cmask, Kernel.gaussian(1.0))
     
         q = imfilter((cmask), ImageFiltering.centered((newtemplate)))
-        display(imview(q))
+        #display(imview(q))
 
         std = 4
         gauss2D(A, offset, μx, μy, σx, σy, x, y) =
@@ -117,11 +117,8 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
             x_guess-crop_left,
             y_guess-crop_bottom,
         ]
-        @show x_guess y_guess x_guess-cropsize size(c)
-        println()
-        lower = [0, -1e300, x_guess-crop_left-searchsize, y_guess-crop_bottom-searchsize, ]
-        upper = [1e300, 1e300, x_guess-crop_left+searchsize, y_guess-crop_bottom+searchsize, ]
-
+        lower = [0, -1e32, x_guess-crop_left-searchsize, y_guess-crop_bottom-searchsize, ]
+        upper = [1e32, 1e32, x_guess-crop_left+searchsize, y_guess-crop_bottom+searchsize, ]
         # test for an example starting point
         result = optimize(
             objective,

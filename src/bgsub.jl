@@ -23,7 +23,7 @@ It finds the star and then masks it, and then re-performs calibration from raws
 including a better BG sub (due to the masking) and supports chopping BG sub (auto-
 detected if star has moved a lot during the sequence).
 """
-function bgsub(conf_fname, pattern=nothing, skypattern=nothing; verbose=true, savedata=true, showplots=true, force=false)
+function bgsub(conf_fname, pattern=nothing, skypattern=nothing; verbose=true, savedata=true, showplots=true, force=false, nanquad=nothing)
     println(SNAP.banner()*"\n\nBGSUB")
    
     # Read the configuration
@@ -95,6 +95,24 @@ function bgsub(conf_fname, pattern=nothing, skypattern=nothing; verbose=true, sa
         ys = axes(calmasked,2) .- calmasked["STAR-Y"]
         rs = @. sqrt(xs^2 + ys'^2)
         calmasked[rs .<= psf_mask_radius] .= NaN
+        
+        # NaN out a whole quadrant if needed
+        # NIRC2 bottom right had issues at some point, so we can mask it out
+        # this might also be useful for just masking out the PSF as well
+        if nanquad == 1
+            cal[div(size(calmasked,1),2)+1:size(calmasked,1), div(size(calmasked,2),2)+1:size(calmasked,2)] .= NaN
+            calmasked[div(size(calmasked,1),2)+1:size(calmasked,1), div(size(calmasked,2),2)+1:size(calmasked,2)] .= NaN
+        elseif nanquad == 2
+            cal[1:div(size(calmasked,1),2), div(size(calmasked,2),2)+1:size(calmasked,2)] .= NaN
+            calmasked[1:div(size(calmasked,1),2), div(size(calmasked,2),2)+1:size(calmasked,2)] .= NaN
+        elseif nanquad == 3
+            cal[1:div(size(calmasked,1),2), 1:div(size(calmasked,2),2)] .= NaN
+            calmasked[1:div(size(calmasked,1),2), 1:div(size(calmasked,2),2)] .= NaN
+        elseif nanquad == 4
+            cal[div(size(calmasked,1),2)+1:size(calmasked,1), 1:div(size(calmasked,2),2)] .= NaN
+            calmasked[div(size(calmasked,1),2)+1:size(calmasked,1), 1:div(size(calmasked,2),2)] .= NaN
+        end
+
         cals_masked[i] = copyheader(cal, mapwindow(median, calmasked, (3,3)))
     end
 
@@ -125,7 +143,9 @@ function bgsub(conf_fname, pattern=nothing, skypattern=nothing; verbose=true, sa
 
     if savedata && get(conf["calibrate"], "write_calmasked", false)
         @progress "Writing" for (i,frame) in enumerate(cals_masked)
-            AstroImages.writefits(@sprintf("%s.%04d.3.cal.masked.fits.gz", caldir, i),frame)
+            maskname = @sprintf("%s.%04d.cal.masked.fits.gz", caldir, i)
+            rawframe = OffsetArrays.no_offset_view(parent(frame))
+            AstroImages.writefits(maskname, rawframe)
         end
     end
     sky_N_most_similar = get(conf["calibrate"], "sky_N_most_similar", typemax(Int))
