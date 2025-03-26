@@ -72,7 +72,7 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
 
         cmask = mapwindow(median,c,(3,3)) .- imfilter(c, Kernel.gaussian(10))
         q = imfilter((cmask), ImageFiltering.centered((newtemplate)))
-        display(imview(q))
+        #display(imview(q))
 
         std = 4
         gauss2D(A, offset, μx, μy, σx, σy, x, y) =
@@ -111,8 +111,8 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
             startI[1],
             startI[2],
         ]
-        lower = [0, -1e300, startI[1]-searchsize, startI[2]-searchsize, ]
-        upper = [1e300, 1e300, startI[1]+searchsize, startI[2]+searchsize, ]
+        lower = [0, -1e32, startI[1]-searchsize, startI[2]-searchsize, ]
+        upper = [1e32, 1e32, startI[1]+searchsize, startI[2]+searchsize, ]
         # test for an example starting point
         result = optimize(
             objective,
