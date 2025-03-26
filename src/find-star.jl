@@ -125,7 +125,7 @@ function centrefit(full::AbstractArray,  xs::Tuple=(1,size(full,1)), ys::Tuple=(
     II = CartesianIndices(measured)
     xmax, ymax = size(measured)
     function objective(params)
-        A, offset, μx, μy = params
+        A, offset, μx, μy, std = params
         result = 0.0
         if μx > xmax || μy > ymax
             return ValType(Inf)
@@ -133,7 +133,7 @@ function centrefit(full::AbstractArray,  xs::Tuple=(1,size(full,1)), ys::Tuple=(
         try # sig might be infeasible so we have to handle this case
             for I in II
                 x, y = Tuple(I)
-                est = model(A, offset, μx, μy, x, y)
+                est = model(A, offset, μx, μy, x, y, std)
                 meas = measured[I]
                 resid = (meas - est)^2
                 # Skip NaN pixels in image - they give no weight.
@@ -203,6 +203,6 @@ function centrefit(full::AbstractArray,  xs::Tuple=(1,size(full,1)), ys::Tuple=(
         y = result.minimizer[4] + ys[1] - 1,
         amplitude = result.minimizer[1],
         background = result.minimizer[2],
-        std = result.minimizer[2],
+        std = result.minimizer[5],
     )
 end
