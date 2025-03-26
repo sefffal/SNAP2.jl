@@ -32,6 +32,10 @@ function snropt_all(fnames_pattern, regions_S, regions_O, regions_M; force=false
     i = 0
     for (fname, targ) in zip(fnames, imgs)
         i+=1
+        if haskey(targ, "ISRDIREF") && targ["ISRDIREF"] > 0
+            println(fname, "\t($i) skipping reference")  
+            continue
+        end
         outfname = replace(fname, ".fits"=>".snropt.fits")
         if !force && isfile(outfname) &&  Base.Filesystem.mtime(outfname) > Base.Filesystem.mtime(fname)
             out = load(outfname,1)
@@ -227,6 +231,14 @@ function snropt_region!(
     rs = imgsep(target)
     θs = imgang(target)
 
+
+    refs_are_rdi = map(refs) do ref
+        if haskey(ref, "ISRDIREF") && ref["ISRDIREF"] > 0
+            return 1
+        end
+        return 0
+    end
+
     # Given a list of frames, calculate the photometry of the planet at the mean location
     # of the target frame.
     # We can use that for throughput normalization, for tuning hyper-parameters, and for 
@@ -258,6 +270,7 @@ function snropt_region!(
         inject_planet_sep_ave .* cos.(ref_planet_pa),
         inject_planet_sep_ave .* sin.(ref_planet_pa),
     )
+    phot_of_ref_at_target_inject_location .*= (1 .- refs_are_rdi)
 
     refs_O = zeros(eltype(refcube), count(region_O), length(refs))
     refs_S = zeros(eltype(refcube), count(region_S), length(refs))
@@ -313,7 +326,7 @@ function snropt_region!(
             rs[region_M] .* cos.(θs[region_M]),
             rs[region_M] .* sin.(θs[region_M]),
             # Eps to work around this bug: https://github.com/JuliaAstro/PSFModels.jl/issues/14
-        )
+        ) .* (1 .- refs_are_rdi[i])
     end
 
     # f,ax,pl = Makie.scatterlines(
