@@ -268,7 +268,7 @@ function snropt_region!(
     valid = vec(all(isfinite,refs_O,dims=2))
 
     # Reject pixels that are strongly deviated from the clipped standard deviation.
-    clip_std = std(StatsBase.trim(vec(view(refs_O,valid,:)); prop=0.10)) # Find std, while ignoring 10% most deviated pixels
+    clip_std = std(collect(StatsBase.trim(vec(view(refs_O,valid,:)); prop=0.10))) # Find std, while ignoring 10% most deviated pixels
     valid[valid] .&= all(
         (-4clip_std .< view(refs_O,valid,:) .< 4clip_std),
         dims=2
@@ -282,12 +282,12 @@ function snropt_region!(
     # Identify the pixels that are safe to use for evaluating the SNR of the subtraction
     # Avoid looking at bad pixels
     # Ignore the bottom and top 0.5% of pixels
-    # clip_ex = extrema(StatsBase.trim(vec(refs_S); prop=0.01)) # Find std, while ignoring 5% most deviated pixels
+    # clip_ex = extrema(collect(StatsBase.trim(vec(refs_S); prop=0.01))) # Find std, while ignoring 5% most deviated pixels
     # region_S_valid = all(
     #     (clip_ex[1] .< refs_S .< clip_ex[2]),
     #     dims=2
     # )[:]
-    # clip_std = std(StatsBase.trim(vec(refs_S); prop=0.10)) # Find std, while ignoring 10% most deviated pixels
+    # clip_std = std(collect(StatsBase.trim(vec(refs_S); prop=0.10))) # Find std, while ignoring 10% most deviated pixels
     # region_S_valid = all(
     #     (-4clip_std .< refs_S .< 4clip_std),
     #     dims=2
@@ -560,7 +560,7 @@ function snropt_region!(
             processed_S ./= throughput
             processed_M ./= throughput
 
-            clip_std = std(StatsBase.trim(vec(processed_S); prop=0.05)) # Find std, while ignoring 10% most deviated pixels
+            clip_std = std(collect(StatsBase.trim(vec(processed_S); prop=0.05))) # Find std, while ignoring 10% most deviated pixels
             region_S_valid = all(
                 (-4clip_std .< processed_S .< 4clip_std),
                 dims=2
