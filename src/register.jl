@@ -14,7 +14,12 @@ end
 function register(fnames::AbstractArray{<:AbstractString}, template_fname::AbstractString; force=false, cropsize=90, searchsize=cropsize)
     template = load(template_fname)
 
-    newtemplate = template
+    # high pass filter and median filter the template
+    newtemplate = mapwindow(median,template,(3,3)) .- imfilter(template, Kernel.gaussian(5))
+    # newtemplate .-= minimum(newtemplate)
+    # newtemplate = sqrt.(newtemplate)
+    # newtemplate = imfilter(newtemplate, Kernel.gaussian(1.0))
+    
 
     # Output axes should be large enough to cover all edges of the images given their star positions.
     # Make it an odd number so centre pixel is star location.
@@ -57,20 +62,21 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
     end
 
     savers = []
-    Threads.@threads :dynamic for (satimg, outfname) in collect(zip(frames,fnames_out))
+    Threads.@threads :dynamic  for (satimg, outfname) in collect(zip(frames,fnames_out))
         x_guess = round(Int, satimg["STAR-X"])
         y_guess = round(Int, satimg["STAR-Y"])
-        c = satimg[
-            max(begin,x_guess-cropsize):min(end, x_guess+cropsize),
-            max(begin,y_guess-cropsize):min(end,y_guess+cropsize)]
+        crop_left = max(first(axes(satimg,1)),x_guess-cropsize)
+        crop_right = min(last(axes(satimg,2)), x_guess+cropsize)
+        crop_bottom = max(first(axes(satimg,1)),y_guess-cropsize)
+        crop_top = min(last(axes(satimg,2)),y_guess+cropsize) # 👕
+        c = satimg[crop_left:crop_right, crop_bottom:crop_top]
 
-        # x = axes(c,1)
-        # y = axes(c,1)
-        # x = x .- mean(x)
-        # y = y .- mean(y)
-        # r = sqrt.(x.^2 .+ y'.^2)
-
-        cmask = mapwindow(median,c,(3,3)) .- imfilter(c, Kernel.gaussian(10))
+        # High pass filter
+        cmask = mapwindow(median,c,(3,3)) .- imfilter(c, Kernel.gaussian(5))
+        # cmask .-= minimum(cmask)
+        # cmask = sqrt.(cmask)
+        # cmask = imfilter(cmask, Kernel.gaussian(1.0))
+    
         q = imfilter((cmask), ImageFiltering.centered((newtemplate)))
         display(imview(q))
 
@@ -108,11 +114,14 @@ function register(fnames::AbstractArray{<:AbstractString}, template_fname::Abstr
             # maximum(pixels) - mean(pixels),
             q[startI],
             guess_offset,# mean(pixels),
-            startI[1],
-            startI[2],
+            x_guess-crop_left,
+            y_guess-crop_bottom,
         ]
-        lower = [0, -1e300, startI[1]-searchsize, startI[2]-searchsize, ]
-        upper = [1e300, 1e300, startI[1]+searchsize, startI[2]+searchsize, ]
+        @show x_guess y_guess x_guess-cropsize size(c)
+        println()
+        lower = [0, -1e300, x_guess-crop_left-searchsize, y_guess-crop_bottom-searchsize, ]
+        upper = [1e300, 1e300, x_guess-crop_left+searchsize, y_guess-crop_bottom+searchsize, ]
+
         # test for an example starting point
         result = optimize(
             objective,
