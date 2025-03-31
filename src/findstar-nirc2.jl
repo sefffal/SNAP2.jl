@@ -128,7 +128,7 @@ function findstar_nirc2(
 
     # Produce frames
     @info "Finding star"
-    tosave = []
+    tosave = Vector{Tuple{String, AstroImageMat}}(undef, length(frames))
     Threads.@threads :dynamic  for (cal,fname,i) in collect(zip(frames,fnames_out,1:length(frames)))
         x,y = find_rough_center(
             cal,
@@ -141,7 +141,7 @@ function findstar_nirc2(
         push!(cal, History, "$(Date(Dates.now())): Found star.")
         cal["STAR-X"] = x
         cal["STAR-Y"] = y
-        push!(tosave, (fname,cal))
+        tosave[i] = (fname,cal)
         println(fname, "\t($i)\tstar pos: $x\t$y")
         # star_x_y[i] = x,y
     end
