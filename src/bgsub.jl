@@ -296,9 +296,7 @@ function bgsub(conf_fname, pattern=nothing, skypattern=nothing; verbose=true, sa
         corrected["BGTILEN"] = tile_count
 
 
-        # push!(savers, (outfname, corrected))
-        push!(savers, (outfname, corrected))
-        # AstroImages.writefits(outfname,corrected)
+        savers[i] = (outfname, corrected)
         println(outfname, "\t($i) calc")
     end
 
@@ -509,7 +507,7 @@ function bgsub2(
 
     
     @info "Calibrating raw images (sky and/or choppping)"
-    savers = []
+    savers = Vector{Tuple{String, AstroImageMat}}(undef, length(cals))
     Threads.@threads :dynamic for i in eachindex(cals)
         outfname = outfnames[i]
         A = cals[i]
